@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DON HUNT Boards</title>
+<link rel="icon" href="images/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#050505; --panel:#111; --line:#2c2c2c; --gold:#f7c948; --gold-2:#ffe27a; --gold-3:#c99a1e; --green:#3ddc84; --red:#e2262b; --orange:#ff8a1f; --muted:#bdbdbd;
+          --head:"Anton",Impact,sans-serif; --body:"Barlow Condensed","Arial Narrow",Arial,sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin:0; color:#fff; font:600 18px/1.35 var(--body); background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(247,201,72,.18), transparent 70%), var(--bg); min-height:100vh; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font: italic 400 clamp(44px, 8vw, 84px)/1 var(--head); margin: 0; letter-spacing:.03em;
+       background: linear-gradient(180deg,var(--gold-2),var(--gold) 45%,var(--gold-3)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .lead { color: var(--muted); margin: 6px 0 22px; font-size: 20px; }
+  .conn { display:flex; gap:10px; align-items:center; flex-wrap:wrap; background:var(--panel); border:2px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:22px; }
+  .dot { display:inline-flex; align-items:center; gap:8px; font-weight:800; }
+  .dot::before { content:""; width:11px; height:11px; border-radius:50%; background:#777; }
+  .dot.ok { color: var(--green); } .dot.ok::before { background: var(--green); box-shadow:0 0 8px var(--green); }
+  .dot.err { color: #ff9a9a; } .dot.err::before { background: var(--red); }
+  .conn a { color: var(--gold); }
+  .cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 3px solid var(--gold-3); border-radius: 16px; padding: 16px; display:flex; flex-direction:column; gap:8px; box-shadow: 0 5px 0 #000; }
+  .card h2 { font: italic 400 30px/1 var(--head); margin:0; letter-spacing:.03em; }
+  .card .what { color: var(--muted); font-size: 17px; }
+  .card .live { font-size: 16px; } .card .live b { color: var(--gold); }
+  .tag { align-self:flex-start; font: italic 400 15px/1 var(--head); letter-spacing:.05em; padding:5px 9px; border-radius:6px; background: var(--red); }
+  .tag.noleader { background:#333; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:auto; }
+  .btn { font: 800 15px var(--body); text-transform:uppercase; letter-spacing:.05em; text-decoration:none; background:#161616; color:var(--gold); border:2px solid var(--gold-3); border-radius:8px; padding:8px 12px; cursor:pointer; }
+  .btn:hover, .btn.primary { background: var(--gold); color:#000; }
+  h3 { font: italic 400 30px/1 var(--head); color: var(--gold); margin: 34px 0 10px; letter-spacing:.03em; }
+  ol { padding-left: 22px; margin: 0; } li { margin: 6px 0; }
+  code { background:#1b1b1b; border:1px solid #333; border-radius:5px; padding:1px 6px; font-size: 16px; }
+  .other { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .other input { flex:1 1 320px; background:#000; color:#fff; border:2px solid #333; border-radius:8px; padding:8px 10px; font: 600 16px var(--body); }
+  .small { color:#8d8d8d; font-size:15px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DON HUNT Boards</h1>
+  <div class="lead">Live stream boards that follow your Google Sheet. Change the sheet, the board catches up in a few seconds.</div>
+
+  <div class="conn">
+    <span class="dot" id="dot">Checking the sheet...</span>
+    <span id="sheetlink"></span>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <h3>Running a night</h3>
+  <ol>
+    <li>Open the Google Sheet. Right-click a <b>TEMPLATE</b> tab, pick <b>Duplicate</b>, and rename the copy (example: <code>9-16 Auction 2</code>).</li>
+    <li>Fill in the yellow boxes: the box you're pulling from, the price, and the hits (prize, odds, picture link).</li>
+    <li>Go to the <b>BOARDS</b> tab and type that exact tab name into <b>LIVE TAB</b> for the right board. The board on stream fades over to the new game on its own.</li>
+    <li>During the game, type owners (and bids for auctions) into the <b>SPOTS</b> rows. Leave the finished tab alone as your record for the night.</li>
+  </ol>
+
+  <h3>Putting a board on stream</h3>
+  <ol>
+    <li>Click <b>OBS link</b> on a board above. That copies an address that hides every button and message.</li>
+    <li>In OBS add a <b>Browser Source</b>, paste the link. Use 1920 x 1080 for a wide scene, or 1080 x 1920 for Whatnot / TikTok (the board switches to the tall layout on its own).</li>
+    <li>Running two of the same board at once? Add a row in BOARDS like <code>auction-2</code>, then add <code>?board=auction-2</code> to the end of that board's address.</li>
+  </ol>
+
+  <h3>Use a different sheet</h3>
+  <div class="small">Paste a Google Sheet link to make every link on this page point at it (handy for a partner running their own copy).</div>
+  <div class="other"><input id="other" placeholder="https://docs.google.com/spreadsheets/d/..."><button class="btn" id="useOther">Use this sheet</button><button class="btn" id="resetOther">Back to default</button></div>
+</div>
+
+<script src="assets/config.js"></script>
+<script src="assets/sheet.js"></script>
+<script>
+(function () {
+  const S = window.DonHuntSheet;
+  const P = new URLSearchParams(location.search);
+  const BOARDS = [
+    { key: 'auction', path: 'auction/', name: '$1 Start Auction', what: 'Hits and box change every game. Shows the High Bid leader.', leader: true },
+    { key: 'prefill', path: 'prefill/', name: '$10 Pre-Fill', what: 'Spots sold in the shop ahead of time. Boxes and winning items change every game.', leader: false },
+    { key: 'pack', path: 'pack/', name: '$30 A Pack', what: 'Packs sold in the shop. Box and winning items change every game.', leader: false },
+    { key: 'custom', path: 'custom/', name: 'Custom Auction', what: 'Auction board you can adjust any time from its Settings button: spots, leader, bid column, colors, or type straight onto the board.', leader: true },
+  ];
+  const sheetParam = P.get('sheet') ? '?sheet=' + encodeURIComponent(S.SHEET_ID) : '';
+  const cards = document.getElementById('cards');
+  BOARDS.forEach(b => {
+    const c = document.createElement('div'); c.className = 'card';
+    const url = b.path + sheetParam;
+    const obs = new URL(b.path, location.href); if (sheetParam) obs.searchParams.set('sheet', S.SHEET_ID); obs.searchParams.set('clean', '1');
+    c.innerHTML = `<span class="tag ${b.leader ? '' : 'noleader'}">${b.leader ? 'Auction + leader' : 'Pre-fill, no leader'}</span>
+      <h2></h2><div class="what"></div><div class="live" data-key="${b.key}">Live tab: <b>...</b></div>
+      <div class="btns"><a class="btn primary" href="${url}">Open board</a><button class="btn" data-obs="${obs.href}">OBS link</button></div>`;
+    c.querySelector('h2').textContent = b.name;
+    c.querySelector('.what').textContent = b.what;
+    cards.appendChild(c);
+  });
+  cards.addEventListener('click', e => {
+    const b = e.target.closest('[data-obs]'); if (!b) return;
+    const done = () => { b.textContent = 'Copied!'; setTimeout(() => b.textContent = 'OBS link', 1800); };
+    (navigator.clipboard ? navigator.clipboard.writeText(b.dataset.obs) : Promise.reject()).then(done, () => { prompt('Copy this link:', b.dataset.obs); });
+  });
+
+  const dot = document.getElementById('dot');
+  if (S.SHEET_ID) {
+    const a = document.createElement('a'); a.href = S.BASE + '/edit'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Open the Google Sheet';
+    document.getElementById('sheetlink').appendChild(a);
+  }
+  async function check() {
+    if (!S.SHEET_ID) { dot.className = 'dot err'; dot.textContent = 'No Google Sheet connected yet (add its ID in assets/config.js)'; return; }
+    const r = await S.readBoards();
+    if (!r.ok) {
+      dot.className = 'dot err';
+      dot.textContent = r.reason === 'private' ? 'Sheet is private: set Share > Anyone with the link > Viewer'
+        : r.reason === 'notab' ? 'Sheet is missing its BOARDS tab' : 'Can\'t reach the sheet right now, retrying';
+    } else {
+      dot.className = 'dot ok'; dot.textContent = 'Sheet connected';
+      document.querySelectorAll('.live').forEach(l => {
+        const row = r.boards[l.dataset.key];
+        l.querySelector('b').textContent = row ? (row.tab || '(none set)') : '(no BOARDS row)';
+      });
+    }
+  }
+  check(); setInterval(check, 8000);
+
+  document.getElementById('useOther').onclick = () => {
+    const id = S.sheetIdFrom(document.getElementById('other').value);
+    if (!id) { alert('That doesn\'t look like a Google Sheet link.'); return; }
+    location.search = '?sheet=' + encodeURIComponent(id);
+  };
+  document.getElementById('resetOther').onclick = () => { location.search = ''; };
+})();
+</script>
+</body>
+</html>
