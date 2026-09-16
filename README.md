@@ -1,32 +1,32 @@
 # DON HUNT live boards
 
 Stream boards for DON HUNT breaks, hosted on GitHub Pages at **https://donhunt.wackymclovin.com**.
-Every board reads a Google Sheet, so games are changed in the sheet, not in code.
+They read the team's existing DON_HUNT Google Sheet, so nothing about how the sheet is filled in changes.
+Built to be read on a TV behind the ripper through a TikTok camera: max 24 spots, huge type, solid color blocks.
 
-| Board | Address | Leader |
-|---|---|---|
-| $1 Start Auction | `/auction/` | High Bid + High Bidder |
-| $10 Pre-Fill | `/prefill/` | none (spots filled bar) |
-| $30 A Pack | `/pack/` | none (packs sold bar) |
-| Custom Auction | `/custom/` | on/off, plus on-screen Settings |
+| Board | Address | Reads | Center panel |
+|---|---|---|---|
+| $1 Start Auction | `/auction/` | `AUCTION` + `AUCTION_CHASE` | High bid + leader (crown on the leading spot) |
+| $10 Pre-Fill | `/prefill/` | `$10` + `$10_CHASE` | Spots filled, no leader |
+| $30 A Pack | `/pack/` | `$30` + `$30_CHASE` | Packs sold, no leader |
+| Custom Auction | `/custom/` | any tabs picked in Settings | Leader on/off, 1-24 spots, labels, or type names on the board |
 
-## How the sheet drives the boards
-- The **BOARDS** tab (must stay the first tab) has one row per board. Column B, **LIVE TAB**, is the game tab that board shows. Change it and the board fades over to the new game within a few seconds.
-- Every game tab starts with `DON HUNT GAME` in A1 and has three sections: **SETTINGS** (title, box, price, spots, banner, status, leader on/off), **HITS** (up to 8: pull, prize, odds, color, image link), and **SPOTS**/**PACKS** (number, owner, bid, hit pulled).
-- Make new games by duplicating a `TEMPLATE` tab. Optional: paste `apps-script/DonHunt.gs` into Extensions > Apps Script for a DON HUNT menu that does it in one click.
-- The sheet must be shared as **Anyone with the link: Viewer**. Keep every cell formatted as Plain text (the template already is).
-- If a tab name is wrong or Google hiccups, the board keeps showing the last good game and only the host sees a message.
+## Sheet format (unchanged from how the team already works)
+- Board tab: column A spot number (1-24), B username, C bid (`FREE` shows a red FREE tag), D note (`winner` shows a WINNER tag).
+- Chase tab: B1 picture link (Google Drive share links work), B2 chase name, B3 prize. The board plays a reveal when it changes.
+- Optional chase-tab rows (label in A, value in B): `Box`, `Title`, `Subtitle`, `Price`, `Banner`, `Status`, `Show Leader`, and `Chase 2 Image URL` / `Chase 2 Name` / `Chase 2 Value` (up to Chase 4).
+- The sheet must stay shared as **Anyone with the link: Viewer**.
+- If Google hiccups, the board keeps showing the last good info; only the host sees a message.
 
 ## Address options
 - `?clean=1` hides all buttons and messages (use for OBS Browser Sources)
-- `?board=auction-2` follows another BOARDS row (two auctions at once)
-- `?tab=9-16 Auction 2` shows one tab and ignores BOARDS
+- `?tab=9_13_26_AUC` shows an old board tab; `?chase=$30_CHASE` a different chase tab
 - `?sheet=<sheet id or link>` uses a different Google Sheet
 - `?layout=wide` or `?layout=tall` forces a layout (default follows the screen shape)
 - `?transparent=1` removes the background
 
 ## Settings
-`assets/config.js` holds the default sheet ID and how often boards check it.
+`assets/config.js` holds the sheet ID and how often boards check it (every 4 seconds).
 
 ## Hosting
 GitHub Pages from the `main` branch root. `CNAME` holds `donhunt.wackymclovin.com`; DNS at Hover has a CNAME record `donhunt` pointing to `<github-username>.github.io`.

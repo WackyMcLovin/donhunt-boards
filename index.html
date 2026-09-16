@@ -53,19 +53,19 @@
 
   <div class="cards" id="cards"></div>
 
-  <h3>Running a night</h3>
+  <h3>Running a night (same sheet as always)</h3>
   <ol>
-    <li>Open the Google Sheet. Right-click a <b>TEMPLATE</b> tab, pick <b>Duplicate</b>, and rename the copy (example: <code>9-16 Auction 2</code>).</li>
-    <li>Fill in the yellow boxes: the box you're pulling from, the price, and the hits (prize, odds, picture link).</li>
-    <li>Go to the <b>BOARDS</b> tab and type that exact tab name into <b>LIVE TAB</b> for the right board. The board on stream fades over to the new game on its own.</li>
-    <li>During the game, type owners (and bids for auctions) into the <b>SPOTS</b> rows. Leave the finished tab alone as your record for the night.</li>
+    <li>Type buyers into the <b>AUCTION</b>, <b>$10</b> or <b>$30</b> tab like normal: spot number in A, username in B, bid in C (type <code>FREE</code> for the free spot, <code>winner</code> in D to tag a winner).</li>
+    <li>Set the chase in the matching <b>_CHASE</b> tab: picture link in B1, chase name in B2, prize in B3. The board plays a reveal when it changes.</li>
+    <li>Optional extras in a _CHASE tab: add a row with <code>Box</code> in column A and the box name in B, or <code>Chase 2 Image URL</code> / <code>Chase 2 Name</code> / <code>Chase 2 Value</code> to show up to 4 chases.</li>
+    <li>When a break is done: duplicate the tab to save it with the date, then clear names and bids on the live tab. The board shows an empty board and fills again as you type.</li>
   </ol>
 
   <h3>Putting a board on stream</h3>
   <ol>
     <li>Click <b>OBS link</b> on a board above. That copies an address that hides every button and message.</li>
     <li>In OBS add a <b>Browser Source</b>, paste the link. Use 1920 x 1080 for a wide scene, or 1080 x 1920 for Whatnot / TikTok (the board switches to the tall layout on its own).</li>
-    <li>Running two of the same board at once? Add a row in BOARDS like <code>auction-2</code>, then add <code>?board=auction-2</code> to the end of that board's address.</li>
+    <li>Want to put an old break back up? Add <code>?tab=</code> and the tab name to the address, like <code>auction/?tab=9_13_26_AUC</code>.</li>
   </ol>
 
   <h3>Use a different sheet</h3>
@@ -80,10 +80,10 @@
   const S = window.DonHuntSheet;
   const P = new URLSearchParams(location.search);
   const BOARDS = [
-    { key: 'auction', path: 'auction/', name: '$1 Start Auction', what: 'Hits and box change every game. Shows the High Bid leader.', leader: true },
-    { key: 'prefill', path: 'prefill/', name: '$10 Pre-Fill', what: 'Spots sold in the shop ahead of time. Boxes and winning items change every game.', leader: false },
-    { key: 'pack', path: 'pack/', name: '$30 A Pack', what: 'Packs sold in the shop. Box and winning items change every game.', leader: false },
-    { key: 'custom', path: 'custom/', name: 'Custom Auction', what: 'Auction board you can adjust any time from its Settings button: spots, leader, bid column, colors, or type straight onto the board.', leader: true },
+    { key: 'auction', path: 'auction/', name: '$1 Start Auction', what: 'Reads the AUCTION tab + AUCTION_CHASE. Shows the high bid and leader.', leader: true, tab: 'AUCTION' },
+    { key: 'prefill', path: 'prefill/', name: '$10 Pre-Fill', what: 'Reads the $10 tab + $10_CHASE. Shows spots filled, no leader.', leader: false, tab: '$10' },
+    { key: 'pack', path: 'pack/', name: '$30 A Pack', what: 'Reads the $30 tab + $30_CHASE. Shows packs sold, no leader.', leader: false, tab: '$30' },
+    { key: 'custom', path: 'custom/', name: 'Custom Auction', what: 'Pick any tab from its Settings button. Change spots (up to 24), leader, labels, or type names right on the board.', leader: true, tab: 'AUCTION' },
   ];
   const sheetParam = P.get('sheet') ? '?sheet=' + encodeURIComponent(S.SHEET_ID) : '';
   const cards = document.getElementById('cards');
@@ -92,7 +92,7 @@
     const url = b.path + sheetParam;
     const obs = new URL(b.path, location.href); if (sheetParam) obs.searchParams.set('sheet', S.SHEET_ID); obs.searchParams.set('clean', '1');
     c.innerHTML = `<span class="tag ${b.leader ? '' : 'noleader'}">${b.leader ? 'Auction + leader' : 'Pre-fill, no leader'}</span>
-      <h2></h2><div class="what"></div><div class="live" data-key="${b.key}">Live tab: <b>...</b></div>
+      <h2></h2><div class="what"></div><div class="live" data-tab="${b.tab}">Spots filled: <b>...</b></div>
       <div class="btns"><a class="btn primary" href="${url}">Open board</a><button class="btn" data-obs="${obs.href}">OBS link</button></div>`;
     c.querySelector('h2').textContent = b.name;
     c.querySelector('.what').textContent = b.what;
@@ -111,18 +111,21 @@
   }
   async function check() {
     if (!S.SHEET_ID) { dot.className = 'dot err'; dot.textContent = 'No Google Sheet connected yet (add its ID in assets/config.js)'; return; }
-    const r = await S.readBoards();
-    if (!r.ok) {
+    const tabs = ['AUCTION', '$10', '$30'];
+    const res = await Promise.all(tabs.map(t => S.readTab(t)));
+    const bad = res.find(r => !r.ok);
+    if (bad) {
       dot.className = 'dot err';
-      dot.textContent = r.reason === 'private' ? 'Sheet is private: set Share > Anyone with the link > Viewer'
-        : r.reason === 'notab' ? 'Sheet is missing its BOARDS tab' : 'Can\'t reach the sheet right now, retrying';
-    } else {
-      dot.className = 'dot ok'; dot.textContent = 'Sheet connected';
-      document.querySelectorAll('.live').forEach(l => {
-        const row = r.boards[l.dataset.key];
-        l.querySelector('b').textContent = row ? (row.tab || '(none set)') : '(no BOARDS row)';
-      });
+      dot.textContent = bad.reason === 'private' ? 'Sheet is private: set Share > Anyone with the link > Viewer'
+        : bad.reason === 'notab' ? 'Sheet is missing the ' + bad.tab + ' tab' : 'Can\'t reach the sheet right now, retrying';
+      return;
     }
+    dot.className = 'dot ok'; dot.textContent = 'Sheet connected';
+    document.querySelectorAll('.live').forEach(l => {
+      const r = res[tabs.indexOf(l.dataset.tab)];
+      const n = r.rows.filter(x => /^\d+$/.test((x[0] || '').trim()) && +x[0] <= 24 && (x[1] || '').trim()).length;
+      l.querySelector('b').textContent = n + ' / 24';
+    });
   }
   check(); setInterval(check, 8000);
 

@@ -1,34 +1,38 @@
-/* DON HUNT live board engine.
+/* DON HUNT live board engine (v3, built for a TV behind the ripper, viewed on TikTok).
    Page sets <body data-type="auction|prefill|pack|custom">.
+
+   Reads the DON_HUNT Google Sheet exactly as the team already runs it:
+     board tab  (AUCTION / $10 / $30): column A = spot 1-24, B = owner, C = bid (or FREE), D = winner note
+     chase tab  (AUCTION_CHASE / $10_CHASE / $30_CHASE): B1 = image link, B2 = chase name, B3 = chase value
+   Optional rows anyone can add to a chase tab (label in A, value in B):
+     Title, Subtitle, Price, Box, Banner, Status, Show Leader,
+     Chase 2 Image URL / Chase 2 Name / Chase 2 Value (up to Chase 4)
+
    URL options:
-     ?board=auction-2   follow a different row of the BOARDS tab
-     ?tab=Auction 3     ignore BOARDS and show this tab
-     ?sheet=ID_or_link  use a different Google Sheet
-     ?clean=1           hide every host control (use this in OBS)
-     ?layout=wide|tall  force a layout (default picks from the screen shape)
-     ?transparent=1     no background (OBS overlays)                        */
+     ?tab=9_13_26_AUC   show a different board tab      ?chase=MY_CHASE  different chase tab
+     ?sheet=ID_or_link  use a different Google Sheet    ?clean=1  hide every button/message (OBS)
+     ?layout=wide|tall  force a layout                  ?transparent=1  no background          */
 (function () {
   const S = window.DonHuntSheet;
   const CFG = window.DONHUNT_CONFIG || {};
   const P = new URLSearchParams(location.search);
   const TYPE = document.body.dataset.type || 'auction';
   const AUCTION_TYPE = TYPE === 'auction' || TYPE === 'custom';
-  const KEY = (P.get('board') || TYPE).trim();
-  const URL_TAB = (P.get('tab') || '').trim();
+  const MAX_SPOTS = 24;
   const CLEAN = P.has('clean') && P.get('clean') !== '0';
   const POLL = Math.max(3, Number(CFG.pollSeconds) || 4) * 1000;
-  const LS = 'donhunt:' + TYPE + ':' + KEY + ':';
+  const LS = 'donhunt3:' + TYPE + ':';
   const ROOT = new URL('..', document.currentScript.src).href;
 
   const DEFAULTS = {
-    auction: { subtitle: '$1 START AUCTION', price: '$1 START', showLeader: true, showBids: true, label: 'SPOT' },
-    prefill: { subtitle: 'PRE-FILL', price: '$10 A SPOT', showLeader: false, showBids: false, label: 'SPOT' },
-    pack:    { subtitle: 'PACK RIP', price: '$30 A PACK', showLeader: false, showBids: false, label: 'PACK' },
-    custom:  { subtitle: 'CUSTOM AUCTION', price: '', showLeader: true, showBids: true, label: 'SPOT' },
+    auction: { tab: 'AUCTION', chase: 'AUCTION_CHASE', subtitle: '$1 START', price: 'AUCTION', showLeader: true, showBids: true },
+    prefill: { tab: '$10', chase: '$10_CHASE', subtitle: 'PRE-FILL', price: '$10 A SPOT', showLeader: false, showBids: false },
+    pack:    { tab: '$30', chase: '$30_CHASE', subtitle: 'PACK RIP', price: '$30 A PACK', showLeader: false, showBids: false },
+    custom:  { tab: 'AUCTION', chase: 'AUCTION_CHASE', subtitle: 'AUCTION', price: '', showLeader: true, showBids: true },
   }[TYPE];
 
-  // ---------- small helpers ----------
-  const $ = (sel, el) => (el || document).querySelector(sel);
+  // ---------- helpers ----------
+  const $ = (sel, root) => (root || document).querySelector(sel);
   const store = {
     get(k, d) { try { const v = localStorage.getItem(LS + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(LS + k, JSON.stringify(v)); } catch (e) {} },
@@ -36,271 +40,269 @@
   };
   const yes = v => /^(y|yes|true|on|1|show)$/i.test(String(v).trim());
   const no = v => /^(n|no|false|off|0|hide)$/i.test(String(v).trim());
+  const isFree = v => /^\s*free\s*$/i.test(String(v || ''));
   function money(v) {
+    if (isFree(v)) return null;
     const n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
     return isFinite(n) ? n : null;
   }
-  function fmtMoney(n) {
-    if (n == null) return '';
-    return '$' + (Math.round(n * 100) % 100 === 0 ? n.toFixed(0) : n.toFixed(2));
-  }
+  const fmtMoney = n => n == null ? '' : '$' + (Math.round(n * 100) % 100 === 0 ? n.toFixed(0) : n.toFixed(2));
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  const COLORS = ['gold', 'red', 'blue', 'purple', 'green', 'orange', 'pink', 'teal'];
-
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function imgUrl(v) {
     v = String(v || '').trim();
     if (!v) return '';
     const d = v.match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=|thumbnail\?id=)([\w-]{10,})/);
-    if (d) return 'https://drive.google.com/thumbnail?id=' + d[1] + '&sz=w600';
+    if (d) return 'https://drive.google.com/thumbnail?id=' + d[1] + '&sz=w1000';
     if (/^(https?:|data:)/i.test(v)) return v;
     try { return new URL(v.replace(/^\/+/, ''), ROOT).href; } catch (e) { return ''; }
   }
 
-  // ---------- parse a game tab ----------
-  function parseGame(rows, tabName) {
-    if (!rows.length || S.norm(rows[0][0]) !== 'don hunt game') return { ok: false, reason: 'notgame' };
-    const g = { tab: tabName, settings: {}, hits: [], spots: {}, label: DEFAULTS.label };
-    let mode = 'top';
-    for (const r of rows) {
-      const a = (r[0] || '').trim();
-      const A = a.toUpperCase(), B = (r[1] || '').trim().toUpperCase();
-      // Section headers are the gold rows: the word in column A AND its partner in column B.
-      if (A === 'SETTINGS' && B === 'VALUE') { mode = 'set'; continue; }
-      if (A === 'HITS' && B === 'PRIZE') { mode = 'hits'; continue; }
-      if ((A === 'SPOTS' || A === 'PACKS') && B === 'OWNER') { mode = 'spots'; g.label = A === 'PACKS' ? 'PACK' : 'SPOT'; continue; }
-      if (mode === 'set') {
-        if (a) g.settings[S.norm(a)] = (r[1] || '').trim();
-      } else if (mode === 'hits') {
-        if (a.startsWith('(')) continue;
-        const h = { pull: a, prize: (r[1] || '').trim(), odds: (r[2] || '').trim(), color: S.norm(r[3]), image: (r[4] || '').trim() };
-        if (h.pull || h.prize) g.hits.push(h);
-      } else if (mode === 'spots') {
-        const n = parseInt(a, 10);
-        if (n >= 1 && n <= 200) g.spots[n] = { owner: (r[1] || '').trim(), bid: (r[2] || '').trim(), hit: (r[3] || '').trim() };
-      }
-    }
-    return { ok: true, game: g };
+  // ---------- read the team's board tab ----------
+  function parseBoard(rows) {
+    const head = rows[0] || [];
+    const looksRight = S.norm(head[1]) === 'owner' || rows.some(r => S.norm(r[1]) === 'owner');
+    if (!looksRight) return null;
+    const spots = {};
+    rows.forEach(r => {
+      const a = String(r[0] || '').trim();
+      if (!/^\d+$/.test(a)) return;
+      const n = +a;
+      if (n < 1 || n > MAX_SPOTS || spots[n]) return;
+      spots[n] = { owner: (r[1] || '').trim(), bid: (r[2] || '').trim(), note: (r[3] || '').trim() };
+    });
+    return spots;
   }
 
-  // Sheet values + defaults + this screen's overrides (custom board) => what we draw.
-  function resolve(g, ovr, manual) {
-    const s = g ? g.settings : {};
-    const pick = (k, d) => (ovr[k] != null && ovr[k] !== '') ? ovr[k] : (s[k] != null && s[k] !== '' ? s[k] : d);
-    const flag = (k, d) => {
-      if (ovr[k] === true || ovr[k] === false) return ovr[k];
-      if (yes(s[k] || '')) return true;
-      if (no(s[k] || '')) return false;
-      return d;
-    };
-    let count = parseInt(pick('spots', 24), 10);
-    if (!(count >= 1)) count = 24;
-    count = Math.min(count, 60);
+  // ---------- read the team's chase tab ----------
+  function parseChase(rows) {
+    const set = {};
+    const chases = {};
+    rows.slice(0, 40).forEach(r => {
+      const k = S.norm(r[0]);
+      const v = (r[1] || '').trim();
+      if (!k || k.startsWith('how to')) return;
+      let m = k.match(/^chase\s*(\d)?\s*(image url|image|picture|name|value|prize)$/);
+      if (m) {
+        const i = +(m[1] || 1);
+        const f = /image|picture/.test(m[2]) ? 'image' : m[2] === 'name' ? 'name' : 'value';
+        (chases[i] = chases[i] || {})[f] = v;
+        return;
+      }
+      if (['title', 'subtitle', 'price', 'box', 'banner', 'status', 'show leader', 'show bids'].includes(k)) set[k] = v;
+    });
+    const list = Object.keys(chases).sort().map(i => chases[i]).filter(c => c.image || c.name || c.value).slice(0, 4);
+    return { settings: set, chases: list };
+  }
+
+  // ---------- what goes on screen ----------
+  function resolve() {
+    const s = Object.assign({}, chase ? chase.settings : {});
+    const o = ovr;
+    const pick = (k, d) => (o[k] != null && o[k] !== '') ? o[k] : (s[k] ? s[k] : d);
+    const flag = (k, d) => (o[k] === true || o[k] === false) ? o[k] : yes(s[k] || '') ? true : no(s[k] || '') ? false : d;
+    let count = parseInt(o.spots, 10);
+    if (!(count >= 1)) count = MAX_SPOTS;
+    count = Math.min(count, MAX_SPOTS);
+    const src = manual ? store.get('manualSpots', {}) : (spots || {});
     const v = {
       title: pick('title', CFG.brand || 'DON HUNT'),
       subtitle: pick('subtitle', DEFAULTS.subtitle),
-      box: pick('box', ''),
       price: pick('price', DEFAULTS.price),
+      box: pick('box', ''),
       banner: pick('banner', ''),
-      prizeLine: pick('prize line', ''),
       status: pick('status', ''),
-      accent: S.norm(pick('accent', 'gold')),
-      count,
-      label: g ? g.label : DEFAULTS.label,
-      hits: (g ? g.hits : []).slice(0, 8),
+      chases: chase ? chase.chases : [],
       showLeader: AUCTION_TYPE && flag('show leader', DEFAULTS.showLeader),
-      showAverage: AUCTION_TYPE && flag('show average', false),
       showBids: AUCTION_TYPE && flag('show bids', DEFAULTS.showBids),
-      spots: {},
+      count, spots: {},
     };
-    const src = manual ? (store.get('manualSpots', {})) : (g ? g.spots : {});
-    for (let n = 1; n <= count; n++) v.spots[n] = src[n] || { owner: '', bid: '', hit: '' };
+    for (let n = 1; n <= count; n++) v.spots[n] = Object.assign({ owner: '', bid: '', note: '' }, src[n]);
     return v;
   }
 
-  // ---------- build the page once ----------
+  // ---------- page ----------
   document.body.classList.toggle('clean', CLEAN);
   document.body.classList.toggle('transparent', P.has('transparent'));
   const app = el('div', 'app');
   app.innerHTML = `
     <div class="stage">
       <header class="top">
-        <div class="titles"><h1 class="title gold"></h1><span class="tag sub shadow"></span></div>
-        <div class="meta"><span class="price"></span><span class="status"></span></div>
+        <h1 class="title gold"></h1>
+        <span class="tag sub"></span>
+        <span class="spacer"></span>
+        <span class="status"></span>
+        <span class="price"></span>
       </header>
-      <div class="boxline">Pulling from <b></b></div>
       <div class="banner"></div>
       <main class="grid">
         <section class="col spots left"></section>
         <section class="col center">
-          <div class="card hits"><h2 class="gold">Hits</h2><div class="hitlist"></div><div class="prizeline gold"></div></div>
+          <div class="card chase">
+            <div class="chasehead">Chase</div>
+            <div class="chaselist"></div>
+            <div class="boxline"></div>
+          </div>
           <div class="card leader" hidden>
             <div class="lbl">High Bid</div>
-            <div class="bigmoney gold">$0</div>
-            <div class="lbl">Leader</div>
-            <div class="leadname shadow none">No bids yet</div>
-            <div class="tiles"><span class="tile sold">Sold<b>0/0</b></span><span class="tile avg" hidden>Avg<b>$0</b></span></div>
+            <div class="bigmoney">$0</div>
+            <div class="leadname none">No bids yet</div>
           </div>
           <div class="card fill" hidden>
-            <div class="lbl filllbl">Spots Filled</div>
-            <div class="fillnum gold">0 / 0</div>
+            <div class="fillnum"><b>0</b><span>/24</span></div>
             <div class="bar"><i></i></div>
-            <div class="openlbl shadow"></div>
+            <div class="openlbl"></div>
           </div>
         </section>
         <section class="col spots right"></section>
       </main>
     </div>
-    <div class="splash"><div><div class="big gold"></div><div class="small">Next game starting soon</div></div></div>
+    <div class="splash"><div><div class="big gold"></div><div class="small">Next break starting soon</div></div></div>
     <div class="notice" hidden></div>
     <div class="toolbar">
       <span class="dot">Connecting</span>
       <button class="btn" data-act="smaller" title="Smaller text">A-</button>
       <button class="btn" data-act="bigger" title="Bigger text">A+</button>
-      <button class="btn" data-act="layout" title="Switch wide / tall layout">Layout</button>
+      <button class="btn" data-act="layout">Layout</button>
       <button class="btn" data-act="full">Fullscreen</button>
       <button class="btn" data-act="panel">Settings</button>
     </div>
     <aside class="panel"></aside>`;
   document.body.appendChild(app);
-  $('.splash .big').textContent = CFG.brand || 'DON HUNT';
+  $('.splash .big', app).textContent = CFG.brand || 'DON HUNT';
 
   // ---------- state ----------
-  let game = store.get('lastGame', null);     // last good game from the sheet (survives refresh)
+  let spots = store.get('lastSpots', null);
+  let chase = store.get('lastChase', null);
   let ovr = TYPE === 'custom' ? store.get('ovr', {}) : {};
-  let manual = TYPE === 'custom' ? store.get('manual', !S.SHEET_ID) : false;
-  let pinned = store.get('pin', '');
-  let liveTab = '';
-  let drawn = null;           // what is currently on screen
-  let lastLeader = null;
+  let manual = TYPE === 'custom' ? store.get('manual', false) : false;
+  let tabPick = TYPE === 'custom' ? store.get('tab', '') : '';
+  let chasePick = TYPE === 'custom' ? store.get('chase', '') : '';
+  const boardTab = () => (P.get('tab') || tabPick || DEFAULTS.tab).trim();
+  const chaseTab = () => (P.get('chase') || chasePick || DEFAULTS.chase).trim();
+  let drawn = null, lastLeader = '', lastChaseKey = '';
   let scale = store.get('scale', 1);
   let layoutPref = P.get('layout') || store.get('layout', 'auto');
 
   // ---------- drawing ----------
-  function setText(node, t) { if (node.textContent !== t) node.textContent = t; }
+  const setText = (node, t) => { if (node.textContent !== t) node.textContent = t; };
 
   function buildSpots(v) {
     const half = Math.ceil(v.count / 2);
     [['.spots.left', 1, half], ['.spots.right', half + 1, v.count]].forEach(([sel, a, b]) => {
       const col = $(sel, app);
       col.innerHTML = '';
-      const head = el('div', 'srow head');
-      head.append(el('span', '', '#'), el('span', '', v.label === 'PACK' ? 'Pack Owner' : 'Spot Owner'), el('span', 'bid', 'Bid'));
-      col.appendChild(head);
       for (let n = a; n <= b; n++) {
         const row = el('div', 'srow'); row.dataset.n = n;
         const name = el('span', 'owner');
-        if (manual) {
-          const i = el('input'); i.placeholder = 'Open'; i.dataset.f = 'owner'; name.appendChild(i);
-        }
+        const nameTxt = el('span', 'ntxt');
+        name.appendChild(nameTxt);
+        if (manual) { const i = el('input'); i.placeholder = 'open'; i.dataset.f = 'owner'; name.replaceChildren(i); }
         const bid = el('span', 'bid');
-        if (manual && v.showBids) {
-          const i = el('input', 'bidin'); i.placeholder = '$'; i.dataset.f = 'bid'; bid.appendChild(i);
-        }
+        if (manual && v.showBids) { const i = el('input', 'bidin'); i.placeholder = '$'; i.dataset.f = 'bid'; bid.appendChild(i); }
         row.append(el('span', 'num', String(n)), name, bid);
         col.appendChild(row);
       }
-      // empty filler rows keep both columns the same height
-      for (let k = b - a + 1; k < half; k++) { const f = el('div', 'srow'); f.style.visibility = 'hidden'; col.appendChild(f); }
+      for (let k = b - a + 1; k < half; k++) { const f = el('div', 'srow ghost'); col.appendChild(f); }
     });
-    sizeRows(v.count);
   }
 
-  function sizeRows(count) {
+  // Shrink a name until it fits its box (long usernames stay whole and readable).
+  function fit(node) {
+    node.style.fontSize = '';
+    if (!node.parentElement) return;
+    const max = node.parentElement.clientWidth;
+    if (!max) return;
+    let f = 1;
+    while (node.scrollWidth > max && f > 0.55) { f -= 0.05; node.style.fontSize = f + 'em'; }
+  }
+
+  function sizeAll() {
     const col = $('.spots.left', app);
-    const rows = Math.ceil(count / 2) + 1;
-    const h = col.clientHeight || window.innerHeight * .7;
-    const w = col.clientWidth || window.innerWidth / 3;
-    const fs = Math.max(10, Math.min(h / rows * (manual ? 0.4 : 0.52), w / 11, 40 * scale));
+    const rows = Math.ceil((drawn ? drawn.count : 24) / 2);
+    const gap = 6;
+    const h = (col.clientHeight || window.innerHeight * .8) - gap * (rows - 1);
+    const fs = Math.max(12, Math.min(h / rows * 0.56, col.clientWidth / 7.5));
     app.style.setProperty('--rowfs', fs.toFixed(1) + 'px');
-    const hl = $('.hitlist', app);
-    const n = Math.max(1, (drawn && drawn.hits.length) || 1);
-    const hh = hl.clientHeight || 300;
-    const hw = hl.clientWidth || 400;
-    const tall = app.classList.contains('tall');
-    const hfs = tall ? Math.min(hw / 16, 30 * scale) : Math.max(10, Math.min(hh / n / 4.4, hw / 15, 34 * scale));
-    app.style.setProperty('--hitfs', hfs.toFixed(1) + 'px');
+    app.querySelectorAll('.ntxt').forEach(fit);
   }
 
-  function drawHits(v) {
-    const key = JSON.stringify(v.hits);
-    const list = $('.hitlist', app);
+  function drawChases(v) {
+    const key = JSON.stringify(v.chases);
+    const list = $('.chaselist', app);
     if (list.dataset.key === key) return;
+    const changed = list.dataset.key != null && list.dataset.key !== key;
     list.dataset.key = key;
+    list.className = 'chaselist n' + Math.max(1, v.chases.length);
     list.innerHTML = '';
-    if (!v.hits.length) { list.appendChild(el('div', 'nohits', 'Hits coming soon')); return; }
-    v.hits.forEach((h, i) => {
-      const c = COLORS.includes(h.color) ? h.color : COLORS[[4, 1, 2, 3, 0, 5, 6, 7][i % 8]] || 'gold';
-      const row = el('div', 'hit ' + c);
-      const pic = el('div', 'pic');
-      const src = imgUrl(h.image);
-      const star = el('span', 'star', '★');
+    if (!v.chases.length) { list.appendChild(el('div', 'nochase', 'Chase coming up')); return; }
+    v.chases.forEach(c => {
+      const item = el('div', 'chaseitem');
+      const src = imgUrl(c.image);
       if (src) {
+        const wrap = el('div', 'cimg');
         const im = new Image(); im.alt = ''; im.referrerPolicy = 'no-referrer';
-        im.onerror = () => { im.remove(); pic.appendChild(star); };
-        im.src = src; pic.appendChild(im);
-      } else pic.appendChild(star);
-      const t = el('div', 'htext');
-      if (h.pull) t.appendChild(el('div', 'pull shadow', h.pull));
-      if (h.prize) t.appendChild(el('div', 'prize gold', h.prize));
-      const odds = el('div', 'odds'); if (h.odds) odds.appendChild(el('span', '', h.odds));
-      row.append(pic, t, odds);
-      list.appendChild(row);
+        im.onerror = () => wrap.remove();
+        im.src = src; wrap.appendChild(im); item.appendChild(wrap);
+      }
+      const t = el('div', 'ctext');
+      if (c.name) t.appendChild(el('div', 'cname', c.name));
+      if (c.value) t.appendChild(el('div', 'cvalue gold', c.value));
+      item.appendChild(t);
+      list.appendChild(item);
     });
+    if (changed) { const card = $('.chase', app); card.classList.remove('reveal'); void card.offsetWidth; card.classList.add('reveal'); }
   }
 
   function draw(v, animate) {
-    const structKey = [v.count, v.label, v.showBids, manual].join('|');
-    const rebuild = !drawn || drawn.structKey !== structKey;
+    const structKey = [v.count, v.showBids, manual].join('|');
+    if (!drawn || drawn.structKey !== structKey) buildSpots(v);
+    drawn = Object.assign({}, v, { structKey });
     app.classList.toggle('no-bid', !v.showBids);
-    document.documentElement.style.setProperty('--accent', 'var(--' + (COLORS.includes(v.accent) ? v.accent : 'gold') + ')');
     setText($('.title', app), v.title);
     setText($('.sub', app), v.subtitle);
     setText($('.price', app), v.price);
     const st = $('.status', app);
     setText(st, v.status);
-    st.classList.toggle('hot', /rip|live|now|sold|last/i.test(v.status));
-    setText($('.boxline b', app), v.box);
-    $('.boxline', app).classList.toggle('empty', !v.box);
     setText($('.banner', app), v.banner);
-    setText($('.prizeline', app), v.prizeLine);
+    setText($('.boxline', app), v.box ? 'Pulling from ' + v.box : '');
     document.title = [v.title, v.subtitle].filter(Boolean).join(' - ');
-    if (rebuild) buildSpots(v);
-    drawn = Object.assign({}, v, { structKey });
-    drawHits(v);
+    drawChases(v);
 
-    // spots
-    let filled = 0, bids = [], lead = null;
+    let filled = 0, lead = null;
     for (let n = 1; n <= v.count; n++) {
       const s = v.spots[n];
       if (s.owner) filled++;
       const b = v.showBids ? money(s.bid) : null;
-      if (b != null && b > 0) { bids.push(b); if (!lead || b > lead.bid) lead = { n, bid: b, owner: s.owner || ('Spot ' + n) }; }
+      if (b != null && b > 0 && (!lead || b > lead.bid)) lead = { n, bid: b, owner: s.owner || ('Spot ' + n) };
     }
+
     app.querySelectorAll('.srow[data-n]').forEach(row => {
       const n = +row.dataset.n, s = v.spots[n];
+      const sig = [s.owner, s.bid, s.note].join('|');
+      const prev = row.dataset.sig;
       const name = $('.owner', row), bid = $('.bid', row);
-      const prev = row.dataset.sig || '';
-      const sig = s.owner + '|' + s.bid + '|' + s.hit;
       if (manual) {
         const oi = $('input[data-f=owner]', row), bi = $('input[data-f=bid]', row);
         if (oi && document.activeElement !== oi) oi.value = s.owner;
         if (bi && document.activeElement !== bi) bi.value = s.bid;
-      } else {
-        if (prev !== sig) {
-          name.textContent = s.owner || 'Open';
-          name.classList.toggle('open', !s.owner);
-          if (s.hit) { const m = el('span', 'hitmark on', s.hit); name.appendChild(m); }
-          const bm = money(s.bid);
-          bid.textContent = s.bid ? (bm != null ? fmtMoney(bm) : s.bid) : '';
-        }
+      } else if (prev !== sig) {
+        const t = $('.ntxt', name);
+        t.textContent = s.owner || 'OPEN';
+        const free = isFree(s.bid);
+        bid.textContent = '';
+        if (free) bid.appendChild(el('span', 'pill free', 'FREE'));
+        else if (v.showBids && s.bid) { const m = money(s.bid); bid.textContent = m != null ? fmtMoney(m) : s.bid; }
+        if (s.note) bid.appendChild(el('span', 'pill win', /win/i.test(s.note) ? 'WINNER' : s.note.slice(0, 10)));
+        row.classList.toggle('has-pill', free || !!s.note);
+        fit(t);
       }
-      if (prev && prev !== sig && animate) { row.classList.remove('pop'); void row.offsetWidth; row.classList.add('pop'); }
+      if (animate && prev != null && prev !== sig && s.owner) { row.classList.remove('pop'); void row.offsetWidth; row.classList.add('pop'); }
       row.dataset.sig = sig;
       row.classList.toggle('filled', !!s.owner);
       row.classList.toggle('lead', !!(v.showLeader && lead && lead.n === n));
     });
 
-    // leader card (auction boards only)
     const lc = $('.leader', app);
     lc.hidden = !v.showLeader;
     if (v.showLeader) {
@@ -308,38 +310,29 @@
       const ln = $('.leadname', lc);
       setText(ln, lead ? lead.owner : 'No bids yet');
       ln.classList.toggle('none', !lead);
-      setText($('.sold b', lc), filled + '/' + v.count);
-      const avgT = $('.avg', lc);
-      avgT.hidden = !v.showAverage;
-      setText($('.avg b', lc), bids.length ? fmtMoney(bids.reduce((a, b) => a + b, 0) / bids.length) : '$0');
+      fit(ln);
       const lk = lead ? lead.n + ':' + lead.bid : '';
       if (animate && lk && lk !== lastLeader) { lc.classList.remove('bump'); void lc.offsetWidth; lc.classList.add('bump'); }
       lastLeader = lk;
     }
 
-    // fill card (pre-fill boards, or an auction board with the leader turned off)
     const fc = $('.fill', app);
     fc.hidden = v.showLeader;
     if (!v.showLeader) {
-      setText($('.filllbl', fc), v.label === 'PACK' ? 'Packs Sold' : 'Spots Filled');
-      setText($('.fillnum', fc), filled + ' / ' + v.count);
+      setText($('.fillnum b', fc), String(filled));
+      setText($('.fillnum span', fc), '/' + v.count);
       $('.bar > i', fc).style.width = (v.count ? filled / v.count * 100 : 0) + '%';
       const open = v.count - filled;
       const ol = $('.openlbl', fc);
-      setText(ol, open <= 0 ? 'Sold out!' : open + (open === 1 ? ' left' : ' left') + ' at ' + (v.price || 'the same price'));
-      if (!v.price && open > 0) setText(ol, open + ' still open');
+      setText(ol, open <= 0 ? 'FULL! RIPPING SOON' : open + ' OPEN');
       ol.classList.toggle('sold', open <= 0);
     }
-    sizeRows(v.count);
+    sizeAll();
   }
 
-  function render(animate, swap) {
-    const v = resolve(game, ovr, manual);
-    if (swap && drawn) {
-      app.classList.add('swapping');
-      setTimeout(() => { draw(v, false); app.classList.remove('swapping'); }, 360);
-    } else draw(v, animate);
-    if (game || manual) $('.splash', app).classList.add('gone');
+  function render(animate) {
+    draw(resolve(), animate);
+    if (spots || chase || manual) $('.splash', app).classList.add('gone');
   }
 
   // ---------- layout ----------
@@ -347,104 +340,109 @@
     const tall = layoutPref === 'tall' || (layoutPref === 'auto' && window.innerHeight > window.innerWidth * 1.05);
     app.classList.toggle('tall', tall);
     document.documentElement.style.setProperty('--scale', scale);
-    if (drawn) sizeRows(drawn.count);
+    if (drawn) requestAnimationFrame(sizeAll);
   }
   window.addEventListener('resize', applyLayout);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => drawn && sizeAll());
 
-  // ---------- host messages (never shown to viewers with ?clean=1) ----------
+  // ---------- host messages (hidden with ?clean=1) ----------
   const dot = $('.dot', app), notice = $('.notice', app);
   function status(kind, text, msg) {
     dot.className = 'dot ' + kind; dot.textContent = text;
     notice.hidden = !msg; if (msg) notice.innerHTML = msg;
   }
-  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function explain(reason, tab) {
-    const keep = game ? ' The board is still showing the last good game.' : '';
+    const keep = (spots || chase) ? ' The board is still showing the last good info.' : '';
     switch (reason) {
-      case 'nosheet': return 'No Google Sheet connected yet. Add the sheet ID in <b>assets/config.js</b>, or add <b>?sheet=</b> plus the sheet link to this page\'s address.' + (TYPE === 'custom' ? ' You can also open <b>Settings</b> and turn on <b>Type on the board</b>.' : '');
+      case 'nosheet': return 'No Google Sheet connected. Add the sheet ID in <b>assets/config.js</b> or add <b>?sheet=</b> and the link to this address.';
       case 'private': return 'Can\'t read the Google Sheet. In the sheet, click <b>Share</b> and set General access to <b>Anyone with the link: Viewer</b>.' + keep;
       case 'offline': return 'Can\'t reach Google right now. Retrying on its own.' + keep;
-      case 'notab': return 'There\'s no tab named <b>' + esc(tab) + '</b> in the sheet. Check the spelling in the BOARDS tab (spaces count).' + keep;
-      case 'notgame': return 'The tab <b>' + esc(tab) + '</b> isn\'t a game tab (cell A1 should say DON HUNT GAME). Duplicate a TEMPLATE tab to make new games.' + keep;
-      case 'noboard': return 'The BOARDS tab has no row for <b>' + esc(KEY) + '</b>. Add a row with <b>' + esc(KEY) + '</b> in column A and the tab to show in column B.' + keep;
-      case 'nolive': return 'The <b>' + esc(KEY) + '</b> row in the BOARDS tab has no LIVE TAB yet. Type a tab name in column B.' + keep;
+      case 'notab': return 'There\'s no tab named <b>' + esc(tab) + '</b> in the sheet (spelling and spaces count).' + keep;
+      case 'notboard': return 'The tab <b>' + esc(tab) + '</b> doesn\'t look like a board (row 1 should read Pack / Owner / Bid).' + keep;
       default: return 'Something went wrong reading the sheet. Retrying.' + keep;
     }
   }
 
-  // ---------- sync loop ----------
+  // ---------- sync ----------
   let fails = 0, timer = null, busy = false;
   async function tick() {
     if (busy) return; busy = true;
     try {
-      if (manual) { status('ok', 'Typing on the board (sheet not used)', ''); return; }
-      if (!S.SHEET_ID) { status('err', 'No sheet', explain('nosheet')); return fail(); }
-      let tab = URL_TAB || pinned;
-      if (!tab) {
-        const b = await S.readBoards();
-        if (!b.ok) { status('err', 'Sheet problem', explain(b.reason)); return fail(); }
-        const row = b.boards[S.norm(KEY)];
-        if (!row) { status('warn', 'No BOARDS row', explain('noboard')); return fail(); }
-        if (!row.tab) { status('warn', 'No live tab', explain('nolive')); return fail(); }
-        tab = row.tab;
+      if (!S.SHEET_ID) { status('err', 'No sheet', explain('nosheet')); fails++; return; }
+      const bt = boardTab(), ct = chaseTab();
+      const [rb, rc] = await Promise.all([
+        manual ? Promise.resolve(null) : S.readTab(bt),
+        ct ? S.readTab(ct) : Promise.resolve(null),
+      ]);
+      let problem = null, changed = false;
+      if (rb) {
+        if (!rb.ok) problem = [rb.reason, bt];
+        else {
+          const p = parseBoard(rb.rows);
+          if (!p) problem = ['notboard', bt];
+          else if (JSON.stringify(p) !== JSON.stringify(spots)) { spots = p; store.set('lastSpots', spots); changed = true; }
+        }
       }
-      const r = await S.readTab(tab);
-      if (!r.ok) { status(r.reason === 'offline' ? 'warn' : 'err', r.reason === 'offline' ? 'Reconnecting' : 'Check the sheet', explain(r.reason, tab)); return fail(); }
-      const p = parseGame(r.rows, r.tab);
-      if (!p.ok) { status('err', 'Not a game tab', explain('notgame', r.tab)); return fail(); }
-      const swapped = !!(game && S.norm(game.tab) !== S.norm(p.game.tab));
-      const changed = !game || JSON.stringify(game) !== JSON.stringify(p.game);
-      game = p.game; liveTab = p.game.tab; fails = 0;
-      if (changed) { store.set('lastGame', game); render(true, swapped); }
-      status('ok', (URL_TAB || pinned ? 'Pinned: ' : 'Live: ') + liveTab, '');
-      if (panel.classList.contains('open')) refreshPanelInfo();
+      if (rc) {
+        if (!rc.ok) { if (!problem) problem = [rc.reason, ct]; }
+        else {
+          const c = parseChase(rc.rows);
+          if (JSON.stringify(c) !== JSON.stringify(chase)) { chase = c; store.set('lastChase', chase); changed = true; }
+        }
+      }
+      if (changed || !drawn) render(true);
+      if (problem) {
+        fails++;
+        status(problem[0] === 'offline' ? 'warn' : 'err', problem[0] === 'offline' ? 'Reconnecting' : 'Check the sheet', explain(problem[0], problem[1]));
+      } else {
+        fails = 0;
+        status('ok', manual ? 'Typing on board + ' + ct : 'Live: ' + bt + (ct ? ' + ' + ct : ''), '');
+      }
     } catch (e) {
+      fails++;
       status('warn', 'Reconnecting', explain('offline'));
-      fail();
     } finally {
       busy = false;
       clearTimeout(timer);
       timer = setTimeout(tick, fails ? Math.min(20000, POLL * (1 + fails)) : POLL);
     }
   }
-  function fail() { fails++; }
 
   // ---------- settings panel ----------
   const panel = $('.panel', app);
   function panelHTML() {
     const custom = TYPE === 'custom';
-    const f = (k, label, ph) => `<label>${label}</label><input type="text" data-o="${k}" placeholder="${esc(ph || 'from sheet')}" value="${esc(ovr[k] || '')}">`;
+    const f = (k, label, ph) => `<label>${label}</label><input type="text" data-o="${k}" placeholder="${esc(ph || 'default')}" value="${esc(ovr[k] || '')}">`;
     const tri = (k, label) => {
       const v = ovr[k] === true ? 'yes' : ovr[k] === false ? 'no' : '';
-      return `<label>${label}</label><select data-t="${k}"><option value="">Use sheet</option><option value="yes"${v === 'yes' ? ' selected' : ''}>Show</option><option value="no"${v === 'no' ? ' selected' : ''}>Hide</option></select>`;
+      return `<label>${label}</label><select data-t="${k}"><option value="">Default</option><option value="yes"${v === 'yes' ? ' selected' : ''}>Show</option><option value="no"${v === 'no' ? ' selected' : ''}>Hide</option></select>`;
     };
     return `
       <button class="btn close" data-act="panel">Close</button>
       <h3>Board settings</h3>
-      <div class="hint">Board <b>${esc(KEY)}</b> &middot; <span class="pi-live"></span></div>
-      <h4>Which game</h4>
-      <label>Tab to show</label>
-      <select class="pinsel"><option value="">Follow the BOARDS tab (recommended)</option></select>
-      <div class="hint">Changing games is normally done in the sheet's BOARDS tab. Pinning only affects this screen.</div>
+      <div class="hint">Reading <b class="pi-live"></b></div>
       ${custom ? `
+      <h4>Which tabs</h4>
+      <label>Spots tab</label><select class="tabsel" data-k="tab"><option value="">AUCTION (default)</option></select>
+      <label>Chase tab</label><select class="tabsel" data-k="chase"><option value="">AUCTION_CHASE (default)</option></select>
       <h4>Adjust this auction</h4>
-      <div class="hint">Anything you type here beats the sheet. Leave a box empty to use the sheet.</div>
-      ${f('title', 'Title')}${f('subtitle', 'Subtitle tag')}${f('box', 'Box / pulling from')}${f('price', 'Price tag')}
-      <label>Number of spots (1 to 60)</label><input type="number" min="1" max="60" data-o="spots" placeholder="from sheet" value="${esc(ovr.spots || '')}">
-      ${f('banner', 'Yellow banner')}${f('prize line', 'Prize line')}${f('status', 'Status tag', 'OPEN, RIPPING NOW...')}
-      ${tri('show leader', 'High bid leader')}${tri('show bids', 'Bid column')}${tri('show average', 'Average bid tile')}
-      <label>Accent color</label><select data-o="accent"><option value="">from sheet</option>${COLORS.map(c => `<option${ovr.accent === c ? ' selected' : ''}>${c}</option>`).join('')}</select>
-      <div class="chk"><input type="checkbox" class="manual" ${manual ? 'checked' : ''}><span>Type on the board (don't use the sheet for spots)</span></div>
-      <div class="row2"><button class="btn" data-act="reset">Reset to sheet</button><button class="btn" data-act="clearmanual">Clear typed spots</button></div>` : ''}
+      <div class="hint">Leave a box empty to use the default.</div>
+      ${f('title', 'Title', CFG.brand || 'DON HUNT')}${f('subtitle', 'Red tag', DEFAULTS.subtitle)}${f('price', 'Gold price tag')}
+      <label>Number of spots (1 to 24)</label><input type="number" min="1" max="24" data-o="spots" placeholder="24" value="${esc(ovr.spots || '')}">
+      ${f('box', 'Pulling from (box)')}${f('banner', 'Yellow banner')}${f('status', 'Status tag', 'OPEN, RIPPING NOW...')}
+      ${tri('show leader', 'High bid leader')}${tri('show bids', 'Bid amounts on spots')}
+      <div class="chk"><input type="checkbox" class="manual" ${manual ? 'checked' : ''}><span>Type names on the board instead of using the sheet</span></div>
+      <div class="row2"><button class="btn" data-act="reset">Reset</button><button class="btn" data-act="clearmanual">Clear typed names</button></div>` : `
+      <div class="hint">This board always shows the <b>${esc(DEFAULTS.tab)}</b> and <b>${esc(DEFAULTS.chase)}</b> tabs, same as the team already fills them in. To show an old tab, add <b>?tab=</b> and its name to the address.</div>`}
       <h4>Screen</h4>
       <div class="row2"><button class="btn" data-act="smaller">Text -</button><button class="btn" data-act="bigger">Text +</button><button class="btn" data-act="layout">Layout: <span class="pi-layout"></span></button></div>
       <h4>OBS / stream link</h4>
-      <div class="hint">Use this address as a Browser Source. It hides every button and message.</div>
+      <div class="hint">Use this as a Browser Source. It hides every button and message.</div>
       <input type="text" class="obs" readonly>
       <div class="row2"><button class="btn" data-act="copy">Copy link</button></div>`;
   }
   function refreshPanelInfo() {
-    const li = $('.pi-live', panel); if (li) li.textContent = manual ? 'typing on board' : (liveTab ? 'showing ' + liveTab : 'not connected');
+    const li = $('.pi-live', panel); if (li) li.textContent = (manual ? 'typed names' : boardTab()) + ' + ' + chaseTab();
     const lo = $('.pi-layout', panel); if (lo) lo.textContent = layoutPref;
     const u = new URL(location.href); u.searchParams.set('clean', '1'); const o = $('.obs', panel); if (o) o.value = u.href;
   }
@@ -452,61 +450,63 @@
     panel.innerHTML = panelHTML();
     panel.classList.add('open');
     refreshPanelInfo();
-    const sel = $('.pinsel', panel);
-    if (URL_TAB) { sel.innerHTML = `<option>${esc(URL_TAB)} (set in the page address)</option>`; sel.disabled = true; }
-    else if (S.SHEET_ID) {
-      try {
-        const map = await S.loadTabs(true);
-        map.__order.filter(n => n !== 'BOARDS' && !/^template/i.test(n) && !/^how to/i.test(n)).forEach(n => {
-          const o = el('option', '', n); o.value = n; if (n === pinned) o.selected = true; sel.appendChild(o);
+    if (TYPE !== 'custom' || !S.SHEET_ID) return;
+    try {
+      const map = await S.loadTabs(true);
+      panel.querySelectorAll('.tabsel').forEach(sel => {
+        const want = sel.dataset.k === 'tab' ? tabPick : chasePick;
+        map.__order.filter(n => sel.dataset.k === 'chase' ? /chase/i.test(n) : !/chase|readme/i.test(n)).forEach(n => {
+          const o = el('option', '', n); o.value = n; if (n === want) o.selected = true; sel.appendChild(o);
         });
-      } catch (e) {}
-    }
+      });
+    } catch (e) {}
   }
   panel.addEventListener('change', e => {
     const t = e.target;
-    if (t.classList.contains('pinsel')) { pinned = t.value; pinned ? store.set('pin', pinned) : store.del('pin'); tick(); return; }
-    if (t.classList.contains('manual')) {
-      manual = t.checked; store.set('manual', manual); drawn = null; render(false); tick(); return;
+    if (t.classList.contains('tabsel')) {
+      if (t.dataset.k === 'tab') { tabPick = t.value; store.set('tab', tabPick); spots = null; }
+      else { chasePick = t.value; store.set('chase', chasePick); chase = null; }
+      refreshPanelInfo(); tick(); return;
     }
-    if (t.dataset.t) { ovr[t.dataset.t] = t.value === 'yes' ? true : t.value === 'no' ? false : undefined; }
-    if (t.dataset.o) { ovr[t.dataset.o] = t.value.trim(); }
+    if (t.classList.contains('manual')) { manual = t.checked; store.set('manual', manual); drawn = null; render(false); tick(); return; }
+    if (t.dataset.t) ovr[t.dataset.t] = t.value === 'yes' ? true : t.value === 'no' ? false : undefined;
+    if (t.dataset.o) ovr[t.dataset.o] = t.value.trim();
     store.set('ovr', ovr); render(false);
   });
-  panel.addEventListener('input', e => { if (e.target.dataset.o && e.target.type === 'text') { ovr[e.target.dataset.o] = e.target.value.trim(); store.set('ovr', ovr); render(false); } });
+  panel.addEventListener('input', e => {
+    const t = e.target;
+    if (t.dataset.o) { ovr[t.dataset.o] = t.value.trim(); store.set('ovr', ovr); render(false); }
+  });
 
-  // typing straight onto the board (custom board, manual mode)
+  // typing names straight onto the custom board
   app.addEventListener('input', e => {
     const f = e.target.dataset && e.target.dataset.f;
     const row = e.target.closest && e.target.closest('.srow[data-n]');
     if (!f || !row) return;
-    const spots = store.get('manualSpots', {});
+    const typed = store.get('manualSpots', {});
     const n = row.dataset.n;
-    spots[n] = Object.assign({ owner: '', bid: '', hit: '' }, spots[n], { [f]: e.target.value });
-    store.set('manualSpots', spots);
+    typed[n] = Object.assign({ owner: '', bid: '', note: '' }, typed[n], { [f]: e.target.value });
+    store.set('manualSpots', typed);
     render(false);
   });
 
-  // ---------- buttons ----------
   app.addEventListener('click', e => {
     const b = e.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act;
-    if (act === 'smaller' || act === 'bigger') { scale = Math.min(1.6, Math.max(.6, Math.round((scale + (act === 'bigger' ? .1 : -.1)) * 10) / 10)); store.set('scale', scale); applyLayout(); }
+    if (act === 'smaller' || act === 'bigger') { scale = Math.min(1.5, Math.max(.7, Math.round((scale + (act === 'bigger' ? .1 : -.1)) * 10) / 10)); store.set('scale', scale); applyLayout(); }
     if (act === 'layout') { layoutPref = { auto: 'wide', wide: 'tall', tall: 'auto' }[layoutPref] || 'auto'; store.set('layout', layoutPref); applyLayout(); refreshPanelInfo(); }
     if (act === 'full') { if (!document.fullscreenElement) document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); else document.exitFullscreen(); }
     if (act === 'panel') { panel.classList.contains('open') ? panel.classList.remove('open') : openPanel(); }
-    if (act === 'reset') { ovr = {}; store.del('ovr'); openPanel(); render(false); }
-    if (act === 'clearmanual') { if (confirm('Clear every name and bid typed on this board?')) { store.del('manualSpots'); drawn = null; render(false); } }
+    if (act === 'reset') { ovr = {}; store.del('ovr'); tabPick = ''; chasePick = ''; store.del('tab'); store.del('chase'); openPanel(); tick(); render(false); }
+    if (act === 'clearmanual') { if (confirm('Clear every name typed on this board?')) { store.del('manualSpots'); drawn = null; render(false); } }
     if (act === 'copy') { const o = $('.obs', panel); o.select(); (navigator.clipboard ? navigator.clipboard.writeText(o.value) : Promise.reject()).catch(() => document.execCommand('copy')); b.textContent = 'Copied'; }
   });
 
-  // toolbar wakes up when the mouse moves, fades when idle
   const tb = $('.toolbar', app); let idle;
   document.addEventListener('mousemove', () => { tb.classList.add('awake'); clearTimeout(idle); idle = setTimeout(() => tb.classList.remove('awake'), 2500); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') panel.classList.remove('open'); });
 
-  // ---------- go ----------
   applyLayout();
-  if (game || manual) render(false);
+  if (spots || chase || manual) render(false);
   tick();
 })();

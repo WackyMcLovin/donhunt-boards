@@ -3,7 +3,7 @@
    (docs.google.com/spreadsheets/d/THIS_PART/edit). You can also paste the whole link.
    Any board link can use a different sheet by adding ?sheet=SHEET_ID to the end. */
 window.DONHUNT_CONFIG = {
-  sheetId: "PASTE_YOUR_SHEET_ID_HERE",
+  sheetId: "1YWSfMr9ftFPeGsUXoclpPvsU_0MdxABGt61lfP-ndqU",
   pollSeconds: 4,        // how often the boards check the sheet
   brand: "DON HUNT"
 };
