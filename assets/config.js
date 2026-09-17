@@ -10,9 +10,9 @@ window.DONHUNT_CONFIG = {
   brand: "DON HUNT",
   // Each extra game reads its own Google Sheet (filled in by the setup script)
   gameSheets: {
-    rtyh: "",
-    types: "",
-    case: "",
-    hits: ""
+    rtyh: "1Xv3wviYmsqL17gR0oSnAAQxm6Qps31Xkn7BAJ1nDe7w",
+    types: "1dFFYzZORz9bLl2-x-l3ODNmpbvH35fFo5lNgtYkm4-I",
+    case: "1cjvGCX4eOXIGtl8QAtk7Kxc2lThXciktKBg0TT46tGM",
+    hits: "1coLxML0j_kK0lMJ11T3Se-N_nvHyu5qpP4AslVgo_Ys"
   }
 };
