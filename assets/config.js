@@ -6,6 +6,6 @@ window.DONHUNT_CONFIG = {
   sheetId: "1YWSfMr9ftFPeGsUXoclpPvsU_0MdxABGt61lfP-ndqU",
   pollSeconds: 4,      // how often the boards check the sheet
   // Google Apps Script web app that holds the PSA token and returns slab photos (see apps-script/PsaProxy.gs)
-  psaProxy: "",
+  psaProxy: "https://script.google.com/macros/s/AKfycbxNe1kc_bmZu25Sk0smGu2RzcfbCNQJqmB_lcgRPi2NwzztWqUCDyWoE28BAKzKlvQoXA/exec",
   brand: "DON HUNT"
 };

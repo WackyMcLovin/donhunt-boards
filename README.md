@@ -25,9 +25,10 @@ Change column B and the board switches within a few seconds. No LIVE tab or a bl
 ## Rewards and real slab photos
 - Every reward lives in the board's `_CHASE` tab: picture in B1, name in B2, prize in B3. Up to 4 rewards: add rows `Chase 2 Image URL` / `Chase 2 Name` / `Chase 2 Value` (same for 3 and 4).
 - Picture cell accepts any image link, a Google Drive share link (file shared "Anyone with the link"), **or a PSA cert number / psacard.com/cert link**.
-- PSA cert: the board pulls PSA's own photo of that slab (and fills the name with the card + grade when the name cell is blank). You can also use a separate row `Chase Cert` / `Chase 2 Cert`.
-- PSA needs an API token (free, from psacard.com/publicapi, 100 lookups/day). Paste it once into a board's **Settings > PSA API token** on each stream computer, or open a board once with `?psa=TOKEN` (it saves and removes itself from the address). Never put the token in the sheet or this repo, both are public.
-- Each cert is looked up once and remembered on that computer, so the daily limit isn't a problem.
+- PSA cert: the board asks the **DON HUNT PSA Helper** (a Google Apps Script web app owned by johnathansaalfeld@gmail.com, code in `apps-script/PsaProxy.gs`, URL in `assets/config.js`) for PSA's own photo of that slab. The PSA token lives only in that script's Script Properties (`PSA_TOKEN`), never in the sheet or this repo. Nothing to set up on stream computers.
+- The helper only answers for certs typed in a tab whose name contains CHASE, and remembers each cert forever, so PSA's 100/day limit isn't a problem.
+- Status 2026-09-16: PSA returns "Access to this API is limited to approved customers" for the token, so PSA must approve the account (collectors-apis@collectors.com) before cert photos appear. Until then, paste the photo link itself (right-click the slab photo on the psacard.com cert page > Copy image address).
+- Changing the helper: edit the script, then Deploy > Manage deployments > Edit > Version: New version (keeps the same URL).
 
 ## Address options
 - `?clean=1` hides all buttons and messages (use for OBS Browser Sources)

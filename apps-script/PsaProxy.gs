@@ -72,7 +72,8 @@ function psa_(path, token) {
   var code = r.getResponseCode();
   if (code !== 200) {
     var msg = code === 429 ? 'PSA daily limit reached (100 lookups). It resets tomorrow.'
-      : (code === 401 || code === 403) ? 'PSA rejected the token. Update PSA_TOKEN in the helper script.'
+      : code === 401 ? 'PSA rejected the token. Update PSA_TOKEN in the helper script.'
+      : code === 403 ? 'PSA has not approved this account for API access yet (collectors-apis@collectors.com).'
       : 'PSA lookup failed (' + code + ').';
     return { ok: false, code: code, error: msg };
   }
