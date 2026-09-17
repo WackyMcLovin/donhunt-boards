@@ -263,6 +263,8 @@
     return null;
   }
   const psaBusy = {}, psaFailAt = {};
+  const picIssues = [];
+  function showPicIssues() { if (picIssues.length) status('warn', 'Picture problem', picIssues.map(esc).join('<br>')); }
   async function psaLookup(cert, needLabel) {
     if (psaGet(cert) || psaBusy[cert]) return;
     if (Date.now() < psaPausedUntil || Date.now() - (psaFailAt[cert] || 0) < 120e3) return;
@@ -314,16 +316,29 @@
   }
 
   function drawChases(v) {
-    const shown = v.chases.map(c => {
-      const cert = certFrom(c);
-      if (!cert) return c;
-      const got = psaGet(cert);
-      if (!got) { psaLookup(cert, !c.name); return Object.assign({}, c, { image: /^https?:/i.test(c.image || '') && !/psacard\.com/i.test(c.image) ? c.image : '' }); }
-      return Object.assign({}, c, { image: got.front, name: c.name || got.label });
+    const IMG = window.DonHuntImages;
+    const issues = [];
+    const shown = v.chases.map((c, i) => {
+      const label = 'Chase' + (i ? ' ' + (i + 1) : '') + ' picture';
+      const fixed = IMG.fixImageLink(c.cert || c.image);
+      const cert = fixed.kind === 'cert' ? fixed.cert : '';
+      if (cert) {
+        const got = psaGet(cert);
+        if (!got) {
+          psaLookup(cert, !c.name);
+          const alt = c.cert ? IMG.fixImageLink(c.image) : { url: '' };   // a picture link next to a separate cert row still shows
+          return Object.assign({}, c, { image: alt.kind === 'cert' ? '' : alt.url });
+        }
+        return Object.assign({}, c, { image: got.front, name: c.name || got.label });
+      }
+      if (fixed.kind === 'page') issues.push(label + ' is a web page, not a picture. Use the Picture Link Maker (home page) to get the picture link.');
+      if (fixed.kind === 'text') issues.push(label + ' isn\'t a link. Paste the picture link as plain text (Cmd+Shift+V) and don\'t use =IMAGE or pasted-in pictures.');
+      return Object.assign({}, c, { image: fixed.url });
     });
     const key = JSON.stringify(shown);
     const list = $('.chaselist', app);
     if (list.dataset.key === key) return;
+    picIssues.splice(0, picIssues.length, ...issues);
     const changed = list.dataset.key != null && list.dataset.key !== key;
     list.dataset.key = key;
     list.className = 'chaselist n' + Math.max(1, shown.length);
@@ -331,11 +346,11 @@
     if (!shown.length) { list.appendChild(el('div', 'nochase', 'Chase coming up')); return; }
     shown.forEach(c => {
       const item = el('div', 'chaseitem');
-      const src = imgUrl(c.image);
+      const src = c.image;
       if (src) {
         const wrap = el('div', 'cimg');
         const im = new Image(); im.alt = ''; im.referrerPolicy = 'no-referrer';
-        im.onerror = () => wrap.remove();
+        im.onerror = () => { wrap.remove(); picIssues.push('A chase picture link won\'t load (' + src.slice(0, 60) + '). Check it in the Picture Link Maker.'); showPicIssues(); };
         im.src = src; wrap.appendChild(im); item.appendChild(wrap);
       }
       const t = el('div', 'ctext');
@@ -493,6 +508,7 @@
         status(problem[0] === 'offline' ? 'warn' : 'err', problem[0] === 'offline' ? 'Reconnecting' : 'Check the sheet', explain(problem[0], problem[1]));
       } else {
         fails = 0;
+        if (picIssues.length) { status('warn', 'Picture problem', picIssues.map(esc).join('<br>')); return; }
         if (psaMsg) { status('warn', 'PSA photo', psaMsg); return; }
         status('ok', manual ? 'Typing on board + ' + ct : 'Live: ' + bt + (ct ? ' + ' + ct : ''), '');
       }

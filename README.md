@@ -24,6 +24,8 @@ Change column B and the board switches within a few seconds. No LIVE tab or a bl
 
 ## Rewards and real slab photos
 - Every reward lives in the board's `_CHASE` tab: picture in B1, name in B2, prize in B3. Up to 4 rewards: add rows `Chase 2 Image URL` / `Chase 2 Name` / `Chase 2 Value` (same for 3 and 4).
+- **Picture Link Maker** (`/picture/`): drag a product photo from any website (or paste a link / Drive link / cert number), it checks the picture loads, and gives a Copy button for the exact link to paste in the sheet.
+- Boards auto-fix Google Images result links, Drive, Dropbox and imgur links, and use the sharpest eBay photo size. Web-page links, plain text, or pictures that won't load show a host-only warning.
 - Picture cell accepts any image link, a Google Drive share link (file shared "Anyone with the link"), **or a PSA cert number / psacard.com/cert link**.
 - PSA cert: the board asks the **DON HUNT PSA Helper** (a Google Apps Script web app owned by johnathansaalfeld@gmail.com, code in `apps-script/PsaProxy.gs`, URL in `assets/config.js`) for PSA's own photo of that slab. The PSA token lives only in that script's Script Properties (`PSA_TOKEN`), never in the sheet or this repo. Nothing to set up on stream computers.
 - The helper only answers for certs typed in a tab whose name contains CHASE, and remembers each cert forever, so PSA's 100/day limit isn't a problem.
