@@ -7,5 +7,12 @@ window.DONHUNT_CONFIG = {
   pollSeconds: 4,      // how often the boards check the sheet
   // Google Apps Script web app that holds the PSA token and returns slab photos (see apps-script/PsaProxy.gs)
   psaProxy: "https://script.google.com/macros/s/AKfycbxNe1kc_bmZu25Sk0smGu2RzcfbCNQJqmB_lcgRPi2NwzztWqUCDyWoE28BAKzKlvQoXA/exec",
-  brand: "DON HUNT"
+  brand: "DON HUNT",
+  // Each extra game reads its own Google Sheet (filled in by the setup script)
+  gameSheets: {
+    rtyh: "",
+    types: "",
+    case: "",
+    hits: ""
+  }
 };

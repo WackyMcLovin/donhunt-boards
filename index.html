@@ -74,6 +74,16 @@
     <li>When a break is done: either point the LIVE tab at a fresh tab, or (the old way) duplicate the tab to save it with the date and clear the live one.</li>
   </ol>
 
+  <h3>The extra games (RTYH, Pick Your Type, Case Break, Wall of Hits)</h3>
+  <ol>
+    <li>Each one has its own Google Sheet (use the <b>Open its Google Sheet</b> link on its card). Only change the yellow boxes and the rows under the gold headers.</li>
+    <li><b>RTYH:</b> add a row at the bottom for each new ripper, bump PACKS as you open, and type the HIT CARD when it lands. The board plays a HIT! celebration.</li>
+    <li><b>Pick Your Type:</b> type the buyer next to their type or color. COLOR can be a name (red, fire, water...) or a code like #ff8800.</li>
+    <li><b>Case Break:</b> set each box to sealed, ripping or done, fill spots, and add hits at the bottom of the hit list.</li>
+    <li><b>Wall of Hits:</b> add each big pull at the bottom with a picture link. The newest one gets the spotlight.</li>
+    <li>Add <code>?sound=1</code> to a board link for a short chime on each hit.</li>
+  </ol>
+
   <h3>Rewards and real slab photos</h3>
   <ol>
     <li>Rewards live in each board's <b>_CHASE</b> tab. Picture in B1, name in B2, prize in B3. Show up to 4 by adding rows <code>Chase 2 Image URL</code>, <code>Chase 2 Name</code>, <code>Chase 2 Value</code> (and 3, 4).</li>
@@ -105,15 +115,21 @@
     { key: 'prefill', path: 'prefill/', name: '$10 Pre-Fill', what: 'Reads the $10 tab + $10_CHASE. Shows spots filled, no leader.', leader: false, tab: '$10' },
     { key: 'pack', path: 'pack/', name: '$30 A Pack', what: 'Reads the $30 tab + $30_CHASE. Shows packs sold, no leader.', leader: false, tab: '$30' },
     { key: 'custom', path: 'custom/', name: 'Custom Auction', what: 'Pick any tab from its Settings button. Change spots (up to 24), leader, labels, or type names right on the board.', leader: true, tab: 'AUCTION' },
+    { key: 'rtyh', path: 'rtyh/', name: 'Rip Till You Hit', what: 'Big pack counter for the current ripper, what counts as a hit, a HIT! celebration, and a hit board with stats.', game: true },
+    { key: 'types', path: 'types/', name: 'Pick Your Type', what: 'Color Hunt / Pick Your Type grid. Each type or color lights up with its owner. Works for Pokemon types or One Piece colors.', game: true },
+    { key: 'case', path: 'case/', name: 'Case Break', what: 'Box-by-box case tracker (sealed, ripping, done), up to 24 spots, and a live hit feed with celebrations.', game: true },
+    { key: 'hits', path: 'hits/', name: 'Wall of Hits', what: 'Spotlight on the newest hit plus a wall of the night\'s pulls. Great for clips.', game: true },
   ];
+  const GS = (window.DONHUNT_CONFIG || {}).gameSheets || {};
   const sheetParam = P.get('sheet') ? '?sheet=' + encodeURIComponent(S.SHEET_ID) : '';
   const cards = document.getElementById('cards');
   BOARDS.forEach(b => {
     const c = document.createElement('div'); c.className = 'card';
-    const url = b.path + sheetParam;
-    const obs = new URL(b.path, location.href); if (sheetParam) obs.searchParams.set('sheet', S.SHEET_ID); obs.searchParams.set('clean', '1');
-    c.innerHTML = `<span class="tag ${b.leader ? '' : 'noleader'}">${b.leader ? 'Auction + leader' : 'Pre-fill, no leader'}</span>
-      <h2></h2><div class="what"></div><div class="live" data-key="${b.key}" data-tab="${b.tab}">Showing: <b>...</b></div>
+    const url = b.path + (b.game ? '' : sheetParam);
+    const obs = new URL(b.path, location.href); if (sheetParam && !b.game) obs.searchParams.set('sheet', S.SHEET_ID); obs.searchParams.set('clean', '1');
+    const gsid = b.game ? GS[b.key] : '';
+    c.innerHTML = `<span class="tag ${b.leader || b.game ? '' : 'noleader'}">${b.game ? 'Own sheet' : b.leader ? 'Auction + leader' : 'Pre-fill, no leader'}</span>
+      <h2></h2><div class="what"></div>${b.game ? (gsid ? `<div class="live"><a href="https://docs.google.com/spreadsheets/d/${gsid}/edit" target="_blank" rel="noopener" style="color:var(--gold)">Open its Google Sheet</a></div>` : '<div class="live">Sheet not connected yet</div>') : `<div class="live" data-key="${b.key}" data-tab="${b.tab}">Showing: <b>...</b></div>`}
       <div class="btns"><a class="btn primary" href="${url}">Open board</a><button class="btn" data-obs="${obs.href}">OBS link</button></div>`;
     c.querySelector('h2').textContent = b.name;
     c.querySelector('.what').textContent = b.what;
@@ -134,7 +150,7 @@
     if (!S.SHEET_ID) { dot.className = 'dot err'; dot.textContent = 'No Google Sheet connected yet (add its ID in assets/config.js)'; return; }
     const lv = await S.readLive();
     const live = lv.ok ? lv.boards : {};
-    const lines = [...document.querySelectorAll('.live')];
+    const lines = [...document.querySelectorAll('.live[data-tab]')];
     const res = await Promise.all(lines.map(l => {
       const row = live[l.dataset.key];
       return S.readTab((row && row.tab) || l.dataset.tab).then(r => ({ r, tab: (row && row.tab) || l.dataset.tab }));

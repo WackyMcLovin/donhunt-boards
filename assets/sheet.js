@@ -109,6 +109,10 @@
     if (/^(auction|auc|\$1|\$1 auction|\$1 start)$/.test(k)) return 'auction';
     if (/^(\$10|10|prefill|pre-fill|pre fill|\$10 prefill)$/.test(k)) return 'prefill';
     if (/^(\$30|30|pack|packs|\$30 pack)$/.test(k)) return 'pack';
+    if (/^(rtyh|rip till you hit|rip til you hit|rip until you hit|pull til you win)$/.test(k)) return 'rtyh';
+    if (/^(types|type|colors|color|pick your type|pick your color|color hunt)$/.test(k)) return 'types';
+    if (/^(case|case break|cases)$/.test(k)) return 'case';
+    if (/^(hits|hit wall|wall of hits)$/.test(k)) return 'hits';
     return k;
   }
   let liveMissingAt = 0;

@@ -11,6 +11,16 @@ Built to be read on a TV behind the ripper through a TikTok camera: max 24 spots
 | $30 A Pack | `/pack/` | `$30` + `$30_CHASE` | Packs sold, no leader |
 | Custom Auction | `/custom/` | any tabs picked in Settings | Leader on/off, 1-24 spots, labels, or type names on the board |
 
+## Extra games (each on its own Google Sheet)
+| Board | Address | Sheet tab |
+|---|---|---|
+| Rip Till You Hit | `/rtyh/` | `RTYH` (or the first tab) |
+| Pick Your Type / Color Hunt | `/types/` | `TYPES` |
+| Case Break | `/case/` | `CASE` |
+| Wall of Hits | `/hits/` | `HITS` |
+
+Sheet IDs live in `assets/config.js` under `gameSheets`. The sheets are built by `apps-script/GameSheetsSetup.gs` (`createGameSheets()`), which lays them out, sets every cell to Plain text, and shares them as Anyone with the link: Viewer. Any board can point at another copy with `?sheet=`. All four formats avoid prizes tied to what a buyer pulls (not allowed on Whatnot or TikTok Shop). `?sound=1` adds a chime on hits.
+
 ## Switching tabs: the optional LIVE tab
 Add a tab named `LIVE`: column A = board (`AUCTION`, `$10`, `$30`, `CUSTOM`), column B = the tab that board should show, column C = chase tab (optional).
 Change column B and the board switches within a few seconds. No LIVE tab or a blank cell = the default tabs below.
