@@ -1,6 +1,6 @@
 # DON HUNT live boards
 
-Stream boards for DON HUNT breaks, hosted on GitHub Pages at **https://donhunt.wackymclovin.com**.
+Stream boards for DON HUNT breaks (BreaksGPT), hosted on GitHub Pages at **https://donhunt.breaksgpt.com**.
 They read the team's existing DON_HUNT Google Sheet, so nothing about how the sheet is filled in changes.
 Built to be read on a TV behind the ripper through a TikTok camera: max 24 spots, huge type, solid color blocks.
 
@@ -29,4 +29,4 @@ Built to be read on a TV behind the ripper through a TikTok camera: max 24 spots
 `assets/config.js` holds the sheet ID and how often boards check it (every 4 seconds).
 
 ## Hosting
-GitHub Pages from the `main` branch root. `CNAME` holds `donhunt.wackymclovin.com`; DNS at Hover has a CNAME record `donhunt` pointing to `<github-username>.github.io`.
+GitHub Pages from the `main` branch root. `CNAME` holds `donhunt.breaksgpt.com`; DNS at IONOS (breaksgpt.com) has a CNAME record `donhunt` pointing to `<github-username>.github.io`.
