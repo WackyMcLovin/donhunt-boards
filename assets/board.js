@@ -265,34 +265,44 @@
   const psaBusy = {}, psaFailAt = {};
   async function psaLookup(cert, needLabel) {
     if (psaGet(cert) || psaBusy[cert]) return;
+    if (Date.now() < psaPausedUntil || Date.now() - (psaFailAt[cert] || 0) < 120e3) return;
     const token = psaToken.get();
-    if (!token) { psaMsg = 'A chase has PSA cert ' + cert + '. Add your PSA API token in <b>Settings</b> to show PSA\'s photo.'; return; }
-    if (Date.now() < psaPausedUntil || Date.now() - (psaFailAt[cert] || 0) < 600e3) return;
+    const proxy = String(CFG.psaProxy || '').trim();
+    if (!token && !proxy) { psaMsg = 'A chase has PSA cert ' + cert + ', but no PSA helper is set up (assets/config.js psaProxy).'; return; }
     psaBusy[cert] = true;
-    const call = path => fetch(PSA_API + path + encodeURIComponent(cert), { headers: { Authorization: 'bearer ' + token }, cache: 'no-store' })
-      .then(async r => {
-        if (r.status === 429) { psaPausedUntil = Date.now() + 3600e3; throw new Error('PSA daily limit reached, trying again in an hour.'); }
-        if (r.status === 401 || r.status === 403) { psaPausedUntil = Date.now() + 600e3; throw new Error('PSA rejected the token. Check it in Settings.'); }
-        if (!r.ok) throw new Error('PSA lookup failed (' + r.status + ').');
-        return r.json();
-      });
     try {
-      const imgs = await call('GetImagesByCertNumber/');
-      const list = Array.isArray(imgs) ? imgs : (imgs && (imgs.Images || imgs.images)) || [];
-      const pick = f => (list.find(i => (i.IsFrontImage ?? i.isFrontImage) === f) || {});
-      const url = i => i.ImageURL || i.ImageUrl || i.imageURL || i.imageUrl || i.url || '';
-      const front = url(pick(true)) || url(list[0] || {});
-      let label = '';
-      if (needLabel) {
-        try {
-          const info = await call('GetByCertNumber/');
-          const c = (info && (info.PSACert || info.psaCert)) || {};
-          const grade = c.CardGrade || c.GradeDescription || '';
-          label = [c.Subject, grade ? 'PSA ' + String(grade).replace(/^PSA\s*/i, '') : ''].filter(Boolean).join(' ');
-        } catch (e) {}
+      let val;
+      if (proxy && !token) {
+        // The shared helper script holds the PSA token, so nobody has to set anything up on this computer.
+        const r = await fetch(proxy + (proxy.includes('?') ? '&' : '?') + 'cert=' + encodeURIComponent(cert), { cache: 'no-store' });
+        const j = await r.json();
+        if (!j.ok) throw new Error(j.error || 'PSA helper could not find that cert.');
+        val = { front: j.front, back: j.back || '', label: j.label || '', at: Date.now() };
+      } else {
+        const call = path => fetch(PSA_API + path + encodeURIComponent(cert), { headers: { Authorization: 'bearer ' + token }, cache: 'no-store' })
+          .then(async r => {
+            if (r.status === 429) { psaPausedUntil = Date.now() + 3600e3; throw new Error('PSA daily limit reached, trying again in an hour.'); }
+            if (r.status === 401 || r.status === 403) { psaPausedUntil = Date.now() + 600e3; throw new Error('PSA rejected the token. Check it in Settings.'); }
+            if (!r.ok) throw new Error('PSA lookup failed (' + r.status + ').');
+            return r.json();
+          });
+        const imgs = await call('GetImagesByCertNumber/');
+        const list = Array.isArray(imgs) ? imgs : (imgs && (imgs.Images || imgs.images)) || [];
+        const pick = f => (list.find(i => (i.IsFrontImage ?? i.isFrontImage) === f) || {});
+        const url = i => i.ImageURL || i.ImageUrl || i.imageURL || i.imageUrl || i.url || '';
+        const front = url(pick(true)) || url(list[0] || {});
+        let label = '';
+        if (needLabel) {
+          try {
+            const info = await call('GetByCertNumber/');
+            const c = (info && (info.PSACert || info.psaCert)) || {};
+            const grade = c.CardGrade || c.GradeDescription || '';
+            label = [c.Subject, grade ? 'PSA ' + String(grade).replace(/^PSA\s*/i, '') : ''].filter(Boolean).join(' ');
+          } catch (e) {}
+        }
+        if (!front) throw new Error('PSA has no photos for cert ' + cert + ' yet.');
+        val = { front, back: url(pick(false)), label, at: Date.now() };
       }
-      if (!front) throw new Error('PSA has no photos for cert ' + cert + ' yet.');
-      const val = { front, back: url(pick(false)), label, at: Date.now() };
       psaMem[cert] = val;
       try { localStorage.setItem(psaKey + cert, JSON.stringify(val)); } catch (e) {}
       psaMsg = '';
@@ -523,8 +533,8 @@
       <div class="row2"><button class="btn" data-act="reset">Reset</button><button class="btn" data-act="clearmanual">Clear typed names</button></div>` : `
       <div class="hint">This board always shows the <b>${esc(DEFAULTS.tab)}</b> and <b>${esc(DEFAULTS.chase)}</b> tabs, same as the team already fills them in. To show an old tab, add <b>?tab=</b> and its name to the address.</div>`}
       <h4>PSA slab photos</h4>
-      <div class="hint">Put a PSA cert number (or psacard.com/cert link) in a chase tab's picture cell and the board shows PSA's own photo. Needs your PSA API token from psacard.com/publicapi. It's saved on this computer only.</div>
-      <label>PSA API token</label><input type="password" class="psatok" placeholder="paste token" value="${esc(psaToken.get())}">
+      <div class="hint">Put a PSA cert number (or psacard.com/cert link) in a chase tab's picture cell and the board shows PSA's own photo. This works automatically through the shared PSA helper. Only paste a token here to override the helper on this one computer.</div>
+      <label>PSA API token (optional override)</label><input type="password" class="psatok" placeholder="paste token" value="${esc(psaToken.get())}">
       <div class="row2"><button class="btn" data-act="psasave">Save token</button><button class="btn" data-act="psaclear">Forget cached photos</button></div>
       <div class="hint psastat"></div>
       <h4>Screen</h4>
