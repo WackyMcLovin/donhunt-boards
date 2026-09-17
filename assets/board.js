@@ -82,16 +82,16 @@
       const k = S.norm(r[0]);
       const v = (r[1] || '').trim();
       if (!k || k.startsWith('how to')) return;
-      let m = k.match(/^chase\s*(\d)?\s*(image url|image|picture|name|value|prize)$/);
+      let m = k.match(/^chase\s*(\d)?\s*(image url|image|picture|name|value|prize|psa cert|cert number|cert #|cert)$/);
       if (m) {
         const i = +(m[1] || 1);
-        const f = /image|picture/.test(m[2]) ? 'image' : m[2] === 'name' ? 'name' : 'value';
+        const f = /image|picture/.test(m[2]) ? 'image' : /cert/.test(m[2]) ? 'cert' : m[2] === 'name' ? 'name' : 'value';
         (chases[i] = chases[i] || {})[f] = v;
         return;
       }
       if (['title', 'subtitle', 'price', 'box', 'banner', 'status', 'show leader', 'show bids'].includes(k)) set[k] = v;
     });
-    const list = Object.keys(chases).sort().map(i => chases[i]).filter(c => c.image || c.name || c.value).slice(0, 4);
+    const list = Object.keys(chases).sort().map(i => chases[i]).filter(c => c.image || c.name || c.value || c.cert).slice(0, 4);
     return { settings: set, chases: list };
   }
 
@@ -229,16 +229,97 @@
     app.querySelectorAll('.ntxt').forEach(fit);
   }
 
+
+  // ---------- PSA cert lookup ----------
+  // Put a PSA cert number (or a psacard.com/cert/... link) in a chase's image or cert cell and the board
+  // shows PSA's own photo of that slab. Needs a PSA Public API token saved on this computer (Settings).
+  // Every cert is looked up once and remembered, so PSA's 100-calls-a-day limit is never an issue.
+  const PSA_API = 'https://api.psacard.com/publicapi/cert/';
+  const psaKey = 'donhunt-psa:';
+  const psaMem = {};
+  let psaPausedUntil = 0, psaMsg = '';
+  const psaToken = {
+    get() { try { return localStorage.getItem('donhunt-psa-token') || ''; } catch (e) { return ''; } },
+    set(v) { try { v ? localStorage.setItem('donhunt-psa-token', v) : localStorage.removeItem('donhunt-psa-token'); } catch (e) {} },
+  };
+  if (P.get('psa')) {   // ?psa=TOKEN once, then it's saved and removed from the address
+    psaToken.set(P.get('psa').trim());
+    const u = new URL(location.href); u.searchParams.delete('psa'); history.replaceState(null, '', u.href);
+  }
+  function certFrom(c) {
+    const cands = [c.cert, c.image];
+    for (const v of cands) {
+      const t = String(v || '').trim();
+      let m = t.match(/psacard\.com\/cert\/(\d{6,10})/i);
+      if (m) return m[1];
+      m = t.match(/^(?:psa\s*#?\s*)?(\d{6,10})$/i);
+      if (m) return m[1];
+    }
+    return '';
+  }
+  function psaGet(cert) {
+    if (psaMem[cert]) return psaMem[cert];
+    try { const v = JSON.parse(localStorage.getItem(psaKey + cert) || 'null'); if (v && v.front) return (psaMem[cert] = v); } catch (e) {}
+    return null;
+  }
+  const psaBusy = {}, psaFailAt = {};
+  async function psaLookup(cert, needLabel) {
+    if (psaGet(cert) || psaBusy[cert]) return;
+    const token = psaToken.get();
+    if (!token) { psaMsg = 'A chase has PSA cert ' + cert + '. Add your PSA API token in <b>Settings</b> to show PSA\'s photo.'; return; }
+    if (Date.now() < psaPausedUntil || Date.now() - (psaFailAt[cert] || 0) < 600e3) return;
+    psaBusy[cert] = true;
+    const call = path => fetch(PSA_API + path + encodeURIComponent(cert), { headers: { Authorization: 'bearer ' + token }, cache: 'no-store' })
+      .then(async r => {
+        if (r.status === 429) { psaPausedUntil = Date.now() + 3600e3; throw new Error('PSA daily limit reached, trying again in an hour.'); }
+        if (r.status === 401 || r.status === 403) { psaPausedUntil = Date.now() + 600e3; throw new Error('PSA rejected the token. Check it in Settings.'); }
+        if (!r.ok) throw new Error('PSA lookup failed (' + r.status + ').');
+        return r.json();
+      });
+    try {
+      const imgs = await call('GetImagesByCertNumber/');
+      const list = Array.isArray(imgs) ? imgs : (imgs && (imgs.Images || imgs.images)) || [];
+      const pick = f => (list.find(i => (i.IsFrontImage ?? i.isFrontImage) === f) || {});
+      const url = i => i.ImageURL || i.ImageUrl || i.imageURL || i.imageUrl || i.url || '';
+      const front = url(pick(true)) || url(list[0] || {});
+      let label = '';
+      if (needLabel) {
+        try {
+          const info = await call('GetByCertNumber/');
+          const c = (info && (info.PSACert || info.psaCert)) || {};
+          const grade = c.CardGrade || c.GradeDescription || '';
+          label = [c.Subject, grade ? 'PSA ' + String(grade).replace(/^PSA\s*/i, '') : ''].filter(Boolean).join(' ');
+        } catch (e) {}
+      }
+      if (!front) throw new Error('PSA has no photos for cert ' + cert + ' yet.');
+      const val = { front, back: url(pick(false)), label, at: Date.now() };
+      psaMem[cert] = val;
+      try { localStorage.setItem(psaKey + cert, JSON.stringify(val)); } catch (e) {}
+      psaMsg = '';
+      render(false);
+    } catch (e) {
+      psaFailAt[cert] = Date.now();
+      psaMsg = String(e.message || e);
+    } finally { psaBusy[cert] = false; }
+  }
+
   function drawChases(v) {
-    const key = JSON.stringify(v.chases);
+    const shown = v.chases.map(c => {
+      const cert = certFrom(c);
+      if (!cert) return c;
+      const got = psaGet(cert);
+      if (!got) { psaLookup(cert, !c.name); return Object.assign({}, c, { image: /^https?:/i.test(c.image || '') && !/psacard\.com/i.test(c.image) ? c.image : '' }); }
+      return Object.assign({}, c, { image: got.front, name: c.name || got.label });
+    });
+    const key = JSON.stringify(shown);
     const list = $('.chaselist', app);
     if (list.dataset.key === key) return;
     const changed = list.dataset.key != null && list.dataset.key !== key;
     list.dataset.key = key;
-    list.className = 'chaselist n' + Math.max(1, v.chases.length);
+    list.className = 'chaselist n' + Math.max(1, shown.length);
     list.innerHTML = '';
-    if (!v.chases.length) { list.appendChild(el('div', 'nochase', 'Chase coming up')); return; }
-    v.chases.forEach(c => {
+    if (!shown.length) { list.appendChild(el('div', 'nochase', 'Chase coming up')); return; }
+    shown.forEach(c => {
       const item = el('div', 'chaseitem');
       const src = imgUrl(c.image);
       if (src) {
@@ -402,6 +483,7 @@
         status(problem[0] === 'offline' ? 'warn' : 'err', problem[0] === 'offline' ? 'Reconnecting' : 'Check the sheet', explain(problem[0], problem[1]));
       } else {
         fails = 0;
+        if (psaMsg) { status('warn', 'PSA photo', psaMsg); return; }
         status('ok', manual ? 'Typing on board + ' + ct : 'Live: ' + bt + (ct ? ' + ' + ct : ''), '');
       }
     } catch (e) {
@@ -440,6 +522,11 @@
       <div class="chk"><input type="checkbox" class="manual" ${manual ? 'checked' : ''}><span>Type names on the board instead of using the sheet</span></div>
       <div class="row2"><button class="btn" data-act="reset">Reset</button><button class="btn" data-act="clearmanual">Clear typed names</button></div>` : `
       <div class="hint">This board always shows the <b>${esc(DEFAULTS.tab)}</b> and <b>${esc(DEFAULTS.chase)}</b> tabs, same as the team already fills them in. To show an old tab, add <b>?tab=</b> and its name to the address.</div>`}
+      <h4>PSA slab photos</h4>
+      <div class="hint">Put a PSA cert number (or psacard.com/cert link) in a chase tab's picture cell and the board shows PSA's own photo. Needs your PSA API token from psacard.com/publicapi. It's saved on this computer only.</div>
+      <label>PSA API token</label><input type="password" class="psatok" placeholder="paste token" value="${esc(psaToken.get())}">
+      <div class="row2"><button class="btn" data-act="psasave">Save token</button><button class="btn" data-act="psaclear">Forget cached photos</button></div>
+      <div class="hint psastat"></div>
       <h4>Screen</h4>
       <div class="row2"><button class="btn" data-act="smaller">Text -</button><button class="btn" data-act="bigger">Text +</button><button class="btn" data-act="layout">Layout: <span class="pi-layout"></span></button></div>
       <h4>OBS / stream link</h4>
@@ -505,6 +592,8 @@
     if (act === 'panel') { panel.classList.contains('open') ? panel.classList.remove('open') : openPanel(); }
     if (act === 'reset') { ovr = {}; store.del('ovr'); tabPick = ''; chasePick = ''; store.del('tab'); store.del('chase'); openPanel(); tick(); render(false); }
     if (act === 'clearmanual') { if (confirm('Clear every name typed on this board?')) { store.del('manualSpots'); drawn = null; render(false); } }
+    if (act === 'psasave') { psaToken.set($('.psatok', panel).value.trim()); psaPausedUntil = 0; psaMsg = ''; $('.psastat', panel).textContent = 'Saved. Looking up certs now.'; render(false); }
+    if (act === 'psaclear') { Object.keys(localStorage).filter(k => k.startsWith(psaKey)).forEach(k => localStorage.removeItem(k)); for (const k in psaMem) delete psaMem[k]; $('.psastat', panel).textContent = 'Cleared. Photos will be looked up again.'; const l = $('.chaselist', app); delete l.dataset.key; render(false); }
     if (act === 'copy') { const o = $('.obs', panel); o.select(); (navigator.clipboard ? navigator.clipboard.writeText(o.value) : Promise.reject()).catch(() => document.execCommand('copy')); b.textContent = 'Copied'; }
   });
 

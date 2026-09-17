@@ -165,3 +165,4 @@ body.transparent { background: transparent; }
 .tall .leadname { font-size: calc(9 * var(--u) * var(--scale)); }
 .tall .openlbl { font-size: calc(10 * var(--u) * var(--scale)); }
 .tall .bar { height: calc(4 * var(--u) * var(--scale)); }
+.chaselist.n3 .chaseitem:first-child { grid-column: 1 / -1; }

@@ -22,6 +22,13 @@ Change column B and the board switches within a few seconds. No LIVE tab or a bl
 - The sheet must stay shared as **Anyone with the link: Viewer**.
 - If Google hiccups, the board keeps showing the last good info; only the host sees a message.
 
+## Rewards and real slab photos
+- Every reward lives in the board's `_CHASE` tab: picture in B1, name in B2, prize in B3. Up to 4 rewards: add rows `Chase 2 Image URL` / `Chase 2 Name` / `Chase 2 Value` (same for 3 and 4).
+- Picture cell accepts any image link, a Google Drive share link (file shared "Anyone with the link"), **or a PSA cert number / psacard.com/cert link**.
+- PSA cert: the board pulls PSA's own photo of that slab (and fills the name with the card + grade when the name cell is blank). You can also use a separate row `Chase Cert` / `Chase 2 Cert`.
+- PSA needs an API token (free, from psacard.com/publicapi, 100 lookups/day). Paste it once into a board's **Settings > PSA API token** on each stream computer, or open a board once with `?psa=TOKEN` (it saves and removes itself from the address). Never put the token in the sheet or this repo, both are public.
+- Each cert is looked up once and remembered on that computer, so the daily limit isn't a problem.
+
 ## Address options
 - `?clean=1` hides all buttons and messages (use for OBS Browser Sources)
 - `?tab=9_13_26_AUC` shows an old board tab; `?chase=$30_CHASE` a different chase tab
