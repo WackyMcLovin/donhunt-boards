@@ -78,7 +78,7 @@
   async function findTab(name) {
     let map = await loadTabs(false);
     let hit = map[norm(name)];
-    if (!hit && Date.now() - lastMissRefresh > 8000) {
+    if (!hit && Date.now() - lastMissRefresh > 20000) {
       lastMissRefresh = Date.now();
       map = await loadTabs(true);
       hit = map[norm(name)];
@@ -101,18 +101,29 @@
     }
   }
 
-  // ---------- BOARDS tab ----------
-  async function readBoards() {
-    const r = await readTab('BOARDS');
-    if (!r.ok) return r;
+  // ---------- LIVE tab (optional control tab) ----------
+  // Column A = which board (AUCTION / $10 / $30 / CUSTOM, or any name used with ?board=),
+  // column B = the tab that board should show, column C = the chase tab (optional).
+  function boardKey(v) {
+    const k = norm(v).replace(/\s*board$/, '');
+    if (/^(auction|auc|\$1|\$1 auction|\$1 start)$/.test(k)) return 'auction';
+    if (/^(\$10|10|prefill|pre-fill|pre fill|\$10 prefill)$/.test(k)) return 'prefill';
+    if (/^(\$30|30|pack|packs|\$30 pack)$/.test(k)) return 'pack';
+    return k;
+  }
+  let liveMissingAt = 0;
+  async function readLive() {
+    if (Date.now() - liveMissingAt < 60000) return { ok: false, reason: 'notab' };
+    const r = await readTab('LIVE');
+    if (!r.ok) { if (r.reason === 'notab') liveMissingAt = Date.now(); return r; }
     const out = {};
     r.rows.forEach(row => {
-      const k = norm(row[0]);
-      if (!k || k === 'board' || k.length > 40 || /\s/.test(k)) return;
-      out[k] = { key: row[0].trim(), tab: (row[1] || '').trim(), about: (row[2] || '').trim() };
+      const k = boardKey(row[0]);
+      if (!k || k === 'board' || k.startsWith('how') || !(row[1] || '').trim()) return;
+      if (!out[k]) out[k] = { tab: (row[1] || '').trim(), chase: (row[2] || '').trim() };
     });
     return { ok: true, boards: out };
   }
 
-  window.DonHuntSheet = { SHEET_ID, BASE, readTab, readBoards, loadTabs, parseCSV, norm, sheetIdFrom };
+  window.DonHuntSheet = { SHEET_ID, BASE, readTab, readLive, boardKey, loadTabs, parseCSV, norm, sheetIdFrom };
 })();

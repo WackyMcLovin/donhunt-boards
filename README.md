@@ -1,6 +1,6 @@
 # DON HUNT live boards
 
-Stream boards for DON HUNT breaks (BreaksGPT), hosted on GitHub Pages at **https://donhunt.breaksgpt.com**.
+Stream boards for DON HUNT breaks, hosted on GitHub Pages at **https://donhunt.breaksgpt.com**.
 They read the team's existing DON_HUNT Google Sheet, so nothing about how the sheet is filled in changes.
 Built to be read on a TV behind the ripper through a TikTok camera: max 24 spots, huge type, solid color blocks.
 
@@ -10,6 +10,10 @@ Built to be read on a TV behind the ripper through a TikTok camera: max 24 spots
 | $10 Pre-Fill | `/prefill/` | `$10` + `$10_CHASE` | Spots filled, no leader |
 | $30 A Pack | `/pack/` | `$30` + `$30_CHASE` | Packs sold, no leader |
 | Custom Auction | `/custom/` | any tabs picked in Settings | Leader on/off, 1-24 spots, labels, or type names on the board |
+
+## Switching tabs: the optional LIVE tab
+Add a tab named `LIVE`: column A = board (`AUCTION`, `$10`, `$30`, `CUSTOM`), column B = the tab that board should show, column C = chase tab (optional).
+Change column B and the board switches within a few seconds. No LIVE tab or a blank cell = the default tabs below.
 
 ## Sheet format (unchanged from how the team already works)
 - Board tab: column A spot number (1-24), B username, C bid (`FREE` shows a red FREE tag), D note (`winner` shows a WINNER tag).

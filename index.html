@@ -53,12 +53,20 @@
 
   <div class="cards" id="cards"></div>
 
+  <h3>Switching to a new tab (the LIVE tab)</h3>
+  <ol>
+    <li>Add a tab to the sheet named exactly <code>LIVE</code> (one time only). Row 1: <code>BOARD</code> | <code>SHOW THIS TAB</code> | <code>CHASE TAB</code>. Rows 2 to 4: <code>AUCTION</code>, <code>$10</code>, <code>$30</code> in column A (add <code>CUSTOM</code> too if you use it).</li>
+    <li>For each new game, duplicate the <code>AUCTION</code>, <code>$10</code> or <code>$30</code> tab and give it a new name, like <code>9_16_26_AUC</code>.</li>
+    <li>Type that exact name next to the board in the LIVE tab (column B). The board on stream switches over within a few seconds. Column C can point at a different chase tab; leave it blank to keep the normal one.</li>
+    <li>No LIVE tab, or a blank cell? The board just uses <code>AUCTION</code> / <code>$10</code> / <code>$30</code> like before. A misspelled name keeps the last good game on screen.</li>
+  </ol>
+
   <h3>Running a night (same sheet as always)</h3>
   <ol>
     <li>Type buyers into the <b>AUCTION</b>, <b>$10</b> or <b>$30</b> tab like normal: spot number in A, username in B, bid in C (type <code>FREE</code> for the free spot, <code>winner</code> in D to tag a winner).</li>
     <li>Set the chase in the matching <b>_CHASE</b> tab: picture link in B1, chase name in B2, prize in B3. The board plays a reveal when it changes.</li>
     <li>Optional extras in a _CHASE tab: add a row with <code>Box</code> in column A and the box name in B, or <code>Chase 2 Image URL</code> / <code>Chase 2 Name</code> / <code>Chase 2 Value</code> to show up to 4 chases.</li>
-    <li>When a break is done: duplicate the tab to save it with the date, then clear names and bids on the live tab. The board shows an empty board and fills again as you type.</li>
+    <li>When a break is done: either point the LIVE tab at a fresh tab, or (the old way) duplicate the tab to save it with the date and clear the live one.</li>
   </ol>
 
   <h3>Putting a board on stream</h3>
@@ -92,7 +100,7 @@
     const url = b.path + sheetParam;
     const obs = new URL(b.path, location.href); if (sheetParam) obs.searchParams.set('sheet', S.SHEET_ID); obs.searchParams.set('clean', '1');
     c.innerHTML = `<span class="tag ${b.leader ? '' : 'noleader'}">${b.leader ? 'Auction + leader' : 'Pre-fill, no leader'}</span>
-      <h2></h2><div class="what"></div><div class="live" data-tab="${b.tab}">Spots filled: <b>...</b></div>
+      <h2></h2><div class="what"></div><div class="live" data-key="${b.key}" data-tab="${b.tab}">Showing: <b>...</b></div>
       <div class="btns"><a class="btn primary" href="${url}">Open board</a><button class="btn" data-obs="${obs.href}">OBS link</button></div>`;
     c.querySelector('h2').textContent = b.name;
     c.querySelector('.what').textContent = b.what;
@@ -111,20 +119,24 @@
   }
   async function check() {
     if (!S.SHEET_ID) { dot.className = 'dot err'; dot.textContent = 'No Google Sheet connected yet (add its ID in assets/config.js)'; return; }
-    const tabs = ['AUCTION', '$10', '$30'];
-    const res = await Promise.all(tabs.map(t => S.readTab(t)));
-    const bad = res.find(r => !r.ok);
-    if (bad) {
+    const lv = await S.readLive();
+    const live = lv.ok ? lv.boards : {};
+    const lines = [...document.querySelectorAll('.live')];
+    const res = await Promise.all(lines.map(l => {
+      const row = live[l.dataset.key];
+      return S.readTab((row && row.tab) || l.dataset.tab).then(r => ({ r, tab: (row && row.tab) || l.dataset.tab }));
+    }));
+    if (!lv.ok && lv.reason !== 'notab') {
       dot.className = 'dot err';
-      dot.textContent = bad.reason === 'private' ? 'Sheet is private: set Share > Anyone with the link > Viewer'
-        : bad.reason === 'notab' ? 'Sheet is missing the ' + bad.tab + ' tab' : 'Can\'t reach the sheet right now, retrying';
+      dot.textContent = lv.reason === 'private' ? 'Sheet is private: set Share > Anyone with the link > Viewer' : 'Can\'t reach the sheet right now, retrying';
       return;
     }
-    dot.className = 'dot ok'; dot.textContent = 'Sheet connected';
-    document.querySelectorAll('.live').forEach(l => {
-      const r = res[tabs.indexOf(l.dataset.tab)];
-      const n = r.rows.filter(x => /^\d+$/.test((x[0] || '').trim()) && +x[0] <= 24 && (x[1] || '').trim()).length;
-      l.querySelector('b').textContent = n + ' / 24';
+    dot.className = 'dot ok';
+    dot.textContent = lv.ok ? 'Sheet connected (following the LIVE tab)' : 'Sheet connected (no LIVE tab, using AUCTION / $10 / $30)';
+    lines.forEach((l, i) => {
+      const { r, tab } = res[i];
+      const n = r.ok ? r.rows.filter(x => /^\d+$/.test((x[0] || '').trim()) && +x[0] <= 24 && (x[1] || '').trim()).length : null;
+      l.querySelector('b').textContent = r.ok ? tab + ' (' + n + '/24 filled)' : tab + ' - tab not found';
     });
   }
   check(); setInterval(check, 8000);

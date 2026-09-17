@@ -178,8 +178,10 @@
   let manual = TYPE === 'custom' ? store.get('manual', false) : false;
   let tabPick = TYPE === 'custom' ? store.get('tab', '') : '';
   let chasePick = TYPE === 'custom' ? store.get('chase', '') : '';
-  const boardTab = () => (P.get('tab') || tabPick || DEFAULTS.tab).trim();
-  const chaseTab = () => (P.get('chase') || chasePick || DEFAULTS.chase).trim();
+  const LIVE_KEY = S.boardKey(P.get('board') || TYPE);
+  let liveRow = null;   // what the sheet's LIVE tab says for this board (if that tab exists)
+  const boardTab = () => (P.get('tab') || tabPick || (liveRow && liveRow.tab) || DEFAULTS.tab).trim();
+  const chaseTab = () => (P.get('chase') || chasePick || (liveRow && liveRow.chase) || DEFAULTS.chase).trim();
   let drawn = null, lastLeader = '', lastChaseKey = '';
   let scale = store.get('scale', 1);
   let layoutPref = P.get('layout') || store.get('layout', 'auto');
@@ -369,6 +371,10 @@
     if (busy) return; busy = true;
     try {
       if (!S.SHEET_ID) { status('err', 'No sheet', explain('nosheet')); fails++; return; }
+      if (!P.get('tab') || !P.get('chase')) {
+        const lv = await S.readLive();
+        liveRow = lv.ok ? (lv.boards[LIVE_KEY] || null) : (lv.reason === 'notab' ? null : liveRow);
+      }
       const bt = boardTab(), ct = chaseTab();
       const [rb, rc] = await Promise.all([
         manual ? Promise.resolve(null) : S.readTab(bt),
